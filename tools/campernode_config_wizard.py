@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """
-CamperNode OS — interaktiver Konfigurations-Assistent.
+CamperNode OS — interaktiver Konfigurations-Assistent (fuer Experten).
 
-Fragt Schritt für Schritt ab (Name, Profil, GPIO, Log-Level, …) und erzeugt:
+Fuer die normale Einrichtung ohne Code:
+  Windows: Doppelklick auf tools/einrichtung.bat
+  Sonst:   tools/einrichtung.html im Browser oeffnen
+  Dann alles direkt in Home Assistant einstellen (Profil, Taster-Pin, Ausgangs-Pin).
+
+Dieses Skript ist nur noch fuer komplexe GPIO-Layouts oder Automatisierung noetig.
   - campernode_config.json          — lesbare Zusammenfassung
   - campernode_zigbee_writes.json   — Attribute + Hex-Payloads
   - apply_campernode_ha.yaml        — Home-Assistant-Skript (ZHA)

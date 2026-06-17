@@ -53,6 +53,8 @@ class CamperNodeCluster(CustomCluster):
         firmware_version: Final = ZCLAttributeDef(
             id=0x0007, type=t.LVBytes, access="r"
         )
+        button_gpio: Final = ZCLAttributeDef(id=0x0008, type=t.uint8_t, access="rw")
+        output_gpio: Final = ZCLAttributeDef(id=0x0009, type=t.uint8_t, access="rw")
 
     class ServerCommandDefs(BaseCommandDefs):
         reboot: Final = ZCLCommandDef(id=0x00, schema={}, direction=False)
@@ -99,7 +101,29 @@ def _config_cluster_entities(builder: QuirkBuilder) -> QuirkBuilder:
             cluster_id=CAMPER_CLUSTER_ID,
             endpoint_id=CONFIG_ENDPOINT,
             translation_key="profile",
-            fallback_name="Profile",
+            fallback_name="Profil",
+        )
+        .number(
+            attribute_name=CamperNodeCluster.AttributeDefs.button_gpio.name,
+            cluster_id=CAMPER_CLUSTER_ID,
+            endpoint_id=CONFIG_ENDPOINT,
+            min_value=0,
+            max_value=23,
+            step=1,
+            translation_key="button_gpio",
+            fallback_name="Taster-Pin",
+            entity_type=EntityType.CONFIG,
+        )
+        .number(
+            attribute_name=CamperNodeCluster.AttributeDefs.output_gpio.name,
+            cluster_id=CAMPER_CLUSTER_ID,
+            endpoint_id=CONFIG_ENDPOINT,
+            min_value=0,
+            max_value=23,
+            step=1,
+            translation_key="output_gpio",
+            fallback_name="Ausgangs-Pin",
+            entity_type=EntityType.CONFIG,
         )
         .number(
             attribute_name=CamperNodeCluster.AttributeDefs.log_level.name,

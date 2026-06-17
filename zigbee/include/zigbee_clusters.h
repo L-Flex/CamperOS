@@ -24,6 +24,9 @@ typedef enum {
     ZB_ATTR_LAST_RSSI        = 0x0005,
     ZB_ATTR_LOG_LEVEL        = 0x0006,
     ZB_ATTR_FIRMWARE_VERSION = 0x0007,
+    /** Simple setup: GPIO pin numbers (0 = disabled). Builds gpio_config blob. */
+    ZB_ATTR_BUTTON_GPIO      = 0x0008,
+    ZB_ATTR_OUTPUT_GPIO      = 0x0009,
 } zigbee_camper_attr_t;
 
 typedef enum {

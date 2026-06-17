@@ -44,6 +44,8 @@ static uint32_t s_attr_uptime;
 static int8_t s_attr_rssi;
 static uint8_t s_attr_log_level;
 static uint8_t s_attr_firmware[ZB_FW_ATTR_BUF_SIZE];
+static uint8_t s_attr_button_gpio;
+static uint8_t s_attr_output_gpio;
 
 static void zb_publish(event_type_t type, int32_t value)
 {
@@ -111,6 +113,49 @@ static void load_profile_from_storage(void)
     s_attr_profile_id = profile;
 }
 
+static bool gpio_is_output_function(gpio_function_t fn)
+{
+    return fn == GPIO_FUNC_DIGITAL_OUTPUT || fn == GPIO_FUNC_RELAY ||
+           fn == GPIO_FUNC_VALVE || fn == GPIO_FUNC_PUMP;
+}
+
+static bool gpio_is_strapping_pin(uint8_t pin)
+{
+    static const uint8_t straps[] = CAMPER_BOARD_STRAPPING_PINS;
+
+    for (size_t i = 0; i < CAMPER_BOARD_STRAPPING_COUNT; i++) {
+        if (straps[i] == pin) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void sync_simple_pins_from_blob(const uint8_t *raw, size_t raw_len)
+{
+    s_attr_button_gpio = 0;
+    s_attr_output_gpio = 0;
+
+    if (raw == NULL || raw_len < 1U) {
+        return;
+    }
+
+    uint8_t count = raw[0];
+    if (count == 0 || raw_len < 1U + ((size_t)count * sizeof(gpio_pin_config_t))) {
+        return;
+    }
+
+    const gpio_pin_config_t *cfg = (const gpio_pin_config_t *)(raw + 1);
+    for (uint8_t i = 0; i < count; i++) {
+        if (cfg[i].function == GPIO_FUNC_BUTTON && cfg[i].profile_bind == 0) {
+            s_attr_button_gpio = cfg[i].pin;
+        }
+        if (cfg[i].profile_bind == 1 && gpio_is_output_function((gpio_function_t)cfg[i].function)) {
+            s_attr_output_gpio = cfg[i].pin;
+        }
+    }
+}
+
 static void load_gpio_from_storage(void)
 {
     uint8_t raw[ZB_GPIO_BLOB_RAW_MAX] = {0};
@@ -123,11 +168,13 @@ static void load_gpio_from_storage(void)
             memcpy(raw + 1, cfg, count * sizeof(gpio_pin_config_t));
             zcl_long_octet_set(s_attr_gpio, sizeof(s_attr_gpio), raw,
                                1U + (count * sizeof(gpio_pin_config_t)));
+            sync_simple_pins_from_blob(raw, 1U + (count * sizeof(gpio_pin_config_t)));
             return;
         }
     }
 
     zcl_long_octet_set(s_attr_gpio, sizeof(s_attr_gpio), raw, 1U);
+    sync_simple_pins_from_blob(raw, 1U);
 }
 
 static void load_calib_from_storage(void)
@@ -194,8 +241,68 @@ static esp_err_t apply_gpio_blob(const uint8_t *raw, size_t raw_len)
     }
 
     zcl_long_octet_set(s_attr_gpio, sizeof(s_attr_gpio), raw, expected);
+    sync_simple_pins_from_blob(raw, expected);
     zb_publish(EVT_CONFIG_CHANGED, 0);
     return ESP_OK;
+}
+
+static esp_err_t validate_simple_gpio_pin(uint8_t pin)
+{
+    if (pin == 0) {
+        return ESP_OK;
+    }
+    if (gpio_is_strapping_pin(pin)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t apply_simple_gpio_pins(uint8_t button_pin, uint8_t output_pin)
+{
+    esp_err_t err = validate_simple_gpio_pin(button_pin);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = validate_simple_gpio_pin(output_pin);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    gpio_function_t output_func = GPIO_FUNC_RELAY;
+    if (s_attr_profile_id == PROFILE_ID_PUMP) {
+        output_func = GPIO_FUNC_PUMP;
+    }
+
+    gpio_pin_config_t pins[2];
+    uint8_t count = 0;
+
+    if (button_pin > 0) {
+        pins[count++] = (gpio_pin_config_t){
+            .pin = button_pin,
+            .function = GPIO_FUNC_BUTTON,
+            .flags = GPIO_FLAG_PULLUP,
+            .profile_bind = 0,
+            .debounce_ms = 50,
+        };
+    }
+    if (output_pin > 0) {
+        pins[count++] = (gpio_pin_config_t){
+            .pin = output_pin,
+            .function = (uint8_t)output_func,
+            .flags = GPIO_FLAG_NONE,
+            .profile_bind = 1,
+        };
+    }
+
+    uint8_t raw[1U + (2U * sizeof(gpio_pin_config_t))];
+    raw[0] = count;
+    if (count > 0) {
+        memcpy(raw + 1, pins, (size_t)count * sizeof(gpio_pin_config_t));
+    }
+
+    s_attr_button_gpio = button_pin;
+    s_attr_output_gpio = output_pin;
+    return apply_gpio_blob(raw, 1U + ((size_t)count * sizeof(gpio_pin_config_t)));
 }
 
 static esp_err_t apply_profile_id(uint8_t profile_id)
@@ -323,6 +430,18 @@ static esp_err_t handle_attr_write(uint16_t attr_id, const uint8_t *value, size_
         }
         return apply_log_level(value[0]);
 
+    case ZB_ATTR_BUTTON_GPIO:
+        if (value == NULL || value_len < 1U) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        return apply_simple_gpio_pins(value[0], s_attr_output_gpio);
+
+    case ZB_ATTR_OUTPUT_GPIO:
+        if (value == NULL || value_len < 1U) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        return apply_simple_gpio_pins(s_attr_button_gpio, value[0]);
+
     case ZB_ATTR_UPTIME_SEC:
     case ZB_ATTR_LAST_RSSI:
     case ZB_ATTR_FIRMWARE_VERSION:
@@ -350,6 +469,8 @@ static void camper_write_attr_cb(uint8_t endpoint, uint16_t attr_id, uint8_t *ne
         break;
     case ZB_ATTR_PROFILE_ID:
     case ZB_ATTR_LOG_LEVEL:
+    case ZB_ATTR_BUTTON_GPIO:
+    case ZB_ATTR_OUTPUT_GPIO:
         value_len = 1U;
         break;
     case ZB_ATTR_GPIO_CONFIG:
@@ -400,6 +521,12 @@ static esp_zb_attribute_list_t *camper_create_custom_attr_list(void)
     esp_zb_custom_cluster_add_custom_attr(attr_list, ZB_ATTR_FIRMWARE_VERSION,
                                           ESP_ZB_ZCL_ATTR_TYPE_CHAR_STRING,
                                           ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, s_attr_firmware);
+    esp_zb_custom_cluster_add_custom_attr(attr_list, ZB_ATTR_BUTTON_GPIO,
+                                          ESP_ZB_ZCL_ATTR_TYPE_U8,
+                                          ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &s_attr_button_gpio);
+    esp_zb_custom_cluster_add_custom_attr(attr_list, ZB_ATTR_OUTPUT_GPIO,
+                                          ESP_ZB_ZCL_ATTR_TYPE_U8,
+                                          ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &s_attr_output_gpio);
 
     return attr_list;
 }
