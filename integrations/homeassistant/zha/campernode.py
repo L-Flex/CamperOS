@@ -57,9 +57,9 @@ class CamperNodeCluster(CustomCluster):
         output_gpio: Final = ZCLAttributeDef(id=0x0009, type=t.uint8_t, access="rw")
 
     class ServerCommandDefs(BaseCommandDefs):
-        reboot: Final = ZCLCommandDef(id=0x00, schema={}, direction=False)
-        factory_reset: Final = ZCLCommandDef(id=0x01, schema={}, direction=False)
-        trigger_ota: Final = ZCLCommandDef(id=0x02, schema={}, direction=False)
+        reboot: Final = ZCLCommandDef(id=0x00, schema={})
+        factory_reset: Final = ZCLCommandDef(id=0x01, schema={})
+        trigger_ota: Final = ZCLCommandDef(id=0x02, schema={})
 
 
 def _campernode_device_filter(device) -> bool:
