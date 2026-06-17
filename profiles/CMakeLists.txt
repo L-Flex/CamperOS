@@ -1,0 +1,25 @@
+idf_component_register(
+    SRCS
+        "src/profile_mgr.c"
+        "relay/src/profile_relay.c"
+        "pump/src/profile_pump.c"
+        "light/src/profile_light.c"
+        "tank/src/profile_tank.c"
+        "climate/src/profile_climate.c"
+        "fan/src/profile_fan.c"
+        "battery/src/profile_battery.c"
+        "sensor/src/profile_sensor.c"
+        "custom/src/profile_custom.c"
+    INCLUDE_DIRS
+        "include"
+        "relay/include"
+        "pump/include"
+        "light/include"
+        "tank/include"
+        "climate/include"
+        "fan/include"
+        "battery/include"
+        "sensor/include"
+        "custom/include"
+    REQUIRES config events storage gpio logger nvs_flash
+)
