@@ -7,17 +7,19 @@ import zigpy.types as t
 from zigpy.quirks import CustomCluster
 from zigpy.quirks.v2 import (
     EntityType,
-    NumberDeviceClass,
     QuirkBuilder,
     ReportingConfig,
     SensorDeviceClass,
     SensorStateClass,
 )
+from zigpy.zcl.clusters.general import OnOff
 from zigpy.zcl.foundation import BaseAttributeDefs, BaseCommandDefs, ZCLAttributeDef, ZCLCommandDef
 
 CAMPER_CLUSTER_ID = 0xFC00
 CONFIG_ENDPOINT = 10
-RELAY_ENDPOINT = 1
+LOAD_ENDPOINT = 1
+HA_ON_OFF_OUTPUT_DEVICE_ID = 0x0002
+HA_ON_OFF_LIGHT_DEVICE_ID = 0x0100
 
 
 class CamperProfile(IntEnum):
@@ -66,83 +68,132 @@ def _campernode_device_filter(device) -> bool:
     return CAMPER_CLUSTER_ID in ep.in_clusters
 
 
+def _load_endpoint_device_type(device) -> int | None:
+    ep = device.endpoints.get(LOAD_ENDPOINT)
+    if ep is None:
+        return None
+    return ep.device_type
+
+
+def _pump_node_filter(device) -> bool:
+    return (
+        _campernode_device_filter(device)
+        and _load_endpoint_device_type(device) == HA_ON_OFF_OUTPUT_DEVICE_ID
+    )
+
+
+def _relay_node_filter(device) -> bool:
+    return (
+        _campernode_device_filter(device)
+        and _load_endpoint_device_type(device) == HA_ON_OFF_LIGHT_DEVICE_ID
+    )
+
+
+def _config_cluster_entities(builder: QuirkBuilder) -> QuirkBuilder:
+    return (
+        builder
+        .replaces(CamperNodeCluster, endpoint_id=CONFIG_ENDPOINT)
+        .enum(
+            attribute_name=CamperNodeCluster.AttributeDefs.profile_id.name,
+            enum_class=CamperProfile,
+            cluster_id=CAMPER_CLUSTER_ID,
+            endpoint_id=CONFIG_ENDPOINT,
+            translation_key="profile",
+            fallback_name="Profile",
+        )
+        .number(
+            attribute_name=CamperNodeCluster.AttributeDefs.log_level.name,
+            cluster_id=CAMPER_CLUSTER_ID,
+            endpoint_id=CONFIG_ENDPOINT,
+            min_value=0,
+            max_value=3,
+            step=1,
+            translation_key="log_level",
+            fallback_name="Log level",
+            entity_type=EntityType.CONFIG,
+        )
+        .sensor(
+            attribute_name=CamperNodeCluster.AttributeDefs.uptime_sec.name,
+            cluster_id=CAMPER_CLUSTER_ID,
+            endpoint_id=CONFIG_ENDPOINT,
+            state_class=SensorStateClass.TOTAL_INCREASING,
+            device_class=SensorDeviceClass.DURATION,
+            translation_key="uptime",
+            fallback_name="Uptime",
+            entity_type=EntityType.DIAGNOSTIC,
+            reporting_config=ReportingConfig(
+                min_interval=60, max_interval=300, reportable_change=60
+            ),
+        )
+        .sensor(
+            attribute_name=CamperNodeCluster.AttributeDefs.firmware_version.name,
+            cluster_id=CAMPER_CLUSTER_ID,
+            endpoint_id=CONFIG_ENDPOINT,
+            translation_key="firmware_version",
+            fallback_name="Firmware version",
+            entity_type=EntityType.DIAGNOSTIC,
+        )
+        .sensor(
+            attribute_name=CamperNodeCluster.AttributeDefs.last_rssi.name,
+            cluster_id=CAMPER_CLUSTER_ID,
+            endpoint_id=CONFIG_ENDPOINT,
+            device_class=SensorDeviceClass.SIGNAL_STRENGTH,
+            state_class=SensorStateClass.MEASUREMENT,
+            translation_key="rssi",
+            fallback_name="RSSI",
+            entity_type=EntityType.DIAGNOSTIC,
+        )
+        .command_button(
+            command_name=CamperNodeCluster.ServerCommandDefs.reboot.name,
+            cluster_id=CAMPER_CLUSTER_ID,
+            endpoint_id=CONFIG_ENDPOINT,
+            translation_key="restart",
+            fallback_name="Restart",
+            entity_type=EntityType.CONFIG,
+        )
+        .command_button(
+            command_name=CamperNodeCluster.ServerCommandDefs.factory_reset.name,
+            cluster_id=CAMPER_CLUSTER_ID,
+            endpoint_id=CONFIG_ENDPOINT,
+            translation_key="factory_reset",
+            fallback_name="Factory reset",
+            entity_type=EntityType.CONFIG,
+        )
+        .command_button(
+            command_name=CamperNodeCluster.ServerCommandDefs.trigger_ota.name,
+            cluster_id=CAMPER_CLUSTER_ID,
+            endpoint_id=CONFIG_ENDPOINT,
+            translation_key="trigger_ota",
+            fallback_name="Trigger OTA",
+            entity_type=EntityType.CONFIG,
+        )
+    )
+
+
 (
-    QuirkBuilder("CamperOS", "CamperNode OS")
-    .filter(_campernode_device_filter)
-    .replaces(CamperNodeCluster, endpoint_id=CONFIG_ENDPOINT)
-    .enum(
-        attribute_name=CamperNodeCluster.AttributeDefs.profile_id.name,
-        enum_class=CamperProfile,
-        cluster_id=CAMPER_CLUSTER_ID,
-        endpoint_id=CONFIG_ENDPOINT,
-        translation_key="profile",
-        fallback_name="Profile",
+    _config_cluster_entities(
+        QuirkBuilder("CamperOS", "CamperNode OS").filter(_relay_node_filter)
     )
-    .number(
-        attribute_name=CamperNodeCluster.AttributeDefs.log_level.name,
-        cluster_id=CAMPER_CLUSTER_ID,
-        endpoint_id=CONFIG_ENDPOINT,
-        min_value=0,
-        max_value=3,
-        step=1,
-        translation_key="log_level",
-        fallback_name="Log level",
-        entity_type=EntityType.CONFIG,
+    .switch(
+        attribute_name=OnOff.AttributeDefs.on_off.name,
+        cluster_id=OnOff.cluster_id,
+        endpoint_id=LOAD_ENDPOINT,
+        translation_key="relay",
+        fallback_name="Relay",
     )
-    .sensor(
-        attribute_name=CamperNodeCluster.AttributeDefs.uptime_sec.name,
-        cluster_id=CAMPER_CLUSTER_ID,
-        endpoint_id=CONFIG_ENDPOINT,
-        state_class=SensorStateClass.TOTAL_INCREASING,
-        device_class=SensorDeviceClass.DURATION,
-        translation_key="uptime",
-        fallback_name="Uptime",
-        entity_type=EntityType.DIAGNOSTIC,
-        reporting_config=ReportingConfig(
-            min_interval=60, max_interval=300, reportable_change=60
-        ),
+    .add_to_registry()
+)
+
+(
+    _config_cluster_entities(
+        QuirkBuilder("CamperOS", "CamperNode OS").filter(_pump_node_filter)
     )
-    .sensor(
-        attribute_name=CamperNodeCluster.AttributeDefs.firmware_version.name,
-        cluster_id=CAMPER_CLUSTER_ID,
-        endpoint_id=CONFIG_ENDPOINT,
-        translation_key="firmware_version",
-        fallback_name="Firmware version",
-        entity_type=EntityType.DIAGNOSTIC,
-    )
-    .sensor(
-        attribute_name=CamperNodeCluster.AttributeDefs.last_rssi.name,
-        cluster_id=CAMPER_CLUSTER_ID,
-        endpoint_id=CONFIG_ENDPOINT,
-        device_class=SensorDeviceClass.SIGNAL_STRENGTH,
-        state_class=SensorStateClass.MEASUREMENT,
-        translation_key="rssi",
-        fallback_name="RSSI",
-        entity_type=EntityType.DIAGNOSTIC,
-    )
-    .command_button(
-        command_name=CamperNodeCluster.ServerCommandDefs.reboot.name,
-        cluster_id=CAMPER_CLUSTER_ID,
-        endpoint_id=CONFIG_ENDPOINT,
-        translation_key="restart",
-        fallback_name="Restart",
-        entity_type=EntityType.CONFIG,
-    )
-    .command_button(
-        command_name=CamperNodeCluster.ServerCommandDefs.factory_reset.name,
-        cluster_id=CAMPER_CLUSTER_ID,
-        endpoint_id=CONFIG_ENDPOINT,
-        translation_key="factory_reset",
-        fallback_name="Factory reset",
-        entity_type=EntityType.CONFIG,
-    )
-    .command_button(
-        command_name=CamperNodeCluster.ServerCommandDefs.trigger_ota.name,
-        cluster_id=CAMPER_CLUSTER_ID,
-        endpoint_id=CONFIG_ENDPOINT,
-        translation_key="trigger_ota",
-        fallback_name="Trigger OTA",
-        entity_type=EntityType.CONFIG,
+    .switch(
+        attribute_name=OnOff.AttributeDefs.on_off.name,
+        cluster_id=OnOff.cluster_id,
+        endpoint_id=LOAD_ENDPOINT,
+        translation_key="pump",
+        fallback_name="Pump",
     )
     .add_to_registry()
 )

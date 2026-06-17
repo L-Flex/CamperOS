@@ -14,5 +14,8 @@ dependencies.lock
 .DS_Store
 Thumbs.db
 
+# Config wizard output (generated locally)
+campernode_config_output/
+
 managed_components/
 .cursor/

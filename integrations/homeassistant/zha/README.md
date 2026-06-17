@@ -27,7 +27,7 @@ You should see *"Loaded custom quirks"* in the logs.
 
 | Endpoint | What ZHA creates |
 |----------|------------------|
-| **1** | Standard **switch** (HA on/off cluster — relay) |
+| **1** | Standard **switch** (HA on/off light — relay) or **Pump** switch (on/off output device type) |
 | **10** | Profile select, log level, uptime, firmware, RSSI, restart / factory reset / OTA buttons |
 
 Endpoint 1 works without the quirk. The quirk is needed for manufacturer cluster `0xFC00` on endpoint 10.
