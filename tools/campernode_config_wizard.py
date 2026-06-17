@@ -16,13 +16,19 @@ Cluster 0xFC00 auf Endpoint 10 — siehe zigbee/include/zigbee_clusters.h
 
 from __future__ import annotations
 
+import argparse
 import json
 import struct
 import sys
-from dataclasses import asdict, dataclass, field
+import traceback
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = SCRIPT_DIR.parent
+DEFAULT_OUT_DIR = PROJECT_ROOT / "campernode_config_output"
 
 CAMPER_CLUSTER_ID = 0xFC00
 CONFIG_ENDPOINT = 10
@@ -127,7 +133,10 @@ class CamperConfig:
 def prompt(text: str, default: str | None = None) -> str:
     suffix = f" [{default}]" if default is not None else ""
     while True:
-        raw = input(f"{text}{suffix}: ").strip()
+        try:
+            raw = input(f"{text}{suffix}: ").strip()
+        except EOFError:
+            raise EOFError("Eingabe abgebrochen (Fenster geschlossen oder leere Pipe).") from None
         if raw == "" and default is not None:
             return default
         if raw != "":
@@ -240,7 +249,10 @@ def build_zigbee_writes(cfg: CamperConfig) -> list[dict[str, Any]]:
         })
 
     if cfg.calibration_hex:
-        cal = bytes.fromhex(cfg.calibration_hex.replace(" ", "").replace(":", ""))
+        try:
+            cal = bytes.fromhex(cfg.calibration_hex.replace(" ", "").replace(":", ""))
+        except ValueError as exc:
+            raise ValueError(f"Ungueltige Kalibrierungs-Hex: {exc}") from exc
         payload = zcl_long_octet(cal)
         writes.append({
             "name": "calibration",
@@ -320,12 +332,15 @@ def wizard_extra_gpio(cfg: CamperConfig) -> None:
     )
 
 
-def run_wizard() -> CamperConfig:
+def run_wizard(out_dir: Path) -> CamperConfig:
     print("=" * 60)
     print(" CamperNode OS — Konfigurations-Assistent")
     print("=" * 60)
-    print("\nDieses Tool erzeugt Zigbee-Schreibbefehle für Cluster 0xFC00")
-    print(f"(Endpoint {CONFIG_ENDPOINT}). Senden z.B. über Home Assistant ZHA.\n")
+    print(f"\nAusgabe-Ordner:\n  {out_dir.resolve()}\n")
+    print("Dieses Tool erzeugt Zigbee-Schreibbefehle fuer Cluster 0xFC00")
+    print(f"(Endpoint {CONFIG_ENDPOINT}). Senden z.B. ueber Home Assistant ZHA.")
+    print("\nTipp: Alle Fragen durchgehen bis zur Zusammenfassung am Ende.")
+    print("      Erst dann werden die Dateien geschrieben.\n")
 
     cfg = CamperConfig()
 
@@ -490,16 +505,8 @@ def print_summary(cfg: CamperConfig, writes: list[dict[str, Any]], out_dir: Path
         print(f"    0x{w['attribute_id']:04X} {w['name']:14s} hex={w['hex']}{reboot}")
 
 
-def main() -> int:
-    try:
-        cfg = run_wizard()
-    except (KeyboardInterrupt, EOFError):
-        print("\nAbgebrochen.")
-        return 1
-
-    writes = build_zigbee_writes(cfg)
-    out_dir = Path("campernode_config_output")
-    out_dir.mkdir(exist_ok=True)
+def write_output_files(cfg: CamperConfig, writes: list[dict[str, Any]], out_dir: Path) -> list[Path]:
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     summary = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -517,24 +524,89 @@ def main() -> int:
         },
     }
 
-    (out_dir / "campernode_config.json").write_text(
-        json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
+    files = {
+        "campernode_config.json": json.dumps(summary, indent=2, ensure_ascii=False),
+        "campernode_zigbee_writes.json": json.dumps(writes, indent=2, ensure_ascii=False),
+        "apply_campernode_ha.yaml": generate_ha_yaml(cfg, writes),
+        "apply_campernode_zigpy.py": generate_zigpy_script(cfg),
+    }
+
+    written: list[Path] = []
+    for name, content in files.items():
+        path = out_dir / name
+        path.write_text(content, encoding="utf-8")
+        written.append(path.resolve())
+    return written
+
+
+def example_config_pump() -> CamperConfig:
+    """Beispiel-Konfiguration ohne interaktive Eingabe."""
+    return CamperConfig(
+        node_name="camper-pumpe",
+        profile_id=1,
+        log_level=1,
+        gpio_pins=[
+            GpioPin(pin=10, function=4, profile_bind=0, flags=GPIO_FLAGS["pullup"], debounce_ms=50),
+            GpioPin(pin=6, function=11, profile_bind=1, flags=0, debounce_ms=0),
+        ],
+        device_ieee="",
+        reboot_after=False,
     )
-    (out_dir / "campernode_zigbee_writes.json").write_text(
-        json.dumps(writes, indent=2, ensure_ascii=False), encoding="utf-8"
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="CamperNode OS Zigbee-Konfigurations-Assistent")
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUT_DIR,
+        help=f"Zielordner (Standard: {DEFAULT_OUT_DIR})",
     )
-    (out_dir / "apply_campernode_ha.yaml").write_text(
-        generate_ha_yaml(cfg, writes), encoding="utf-8"
+    parser.add_argument(
+        "--quick",
+        action="store_true",
+        help="Beispiel-Pumpen-Konfiguration ohne Fragen schreiben (zum Testen)",
     )
-    (out_dir / "apply_campernode_zigpy.py").write_text(
-        generate_zigpy_script(cfg), encoding="utf-8"
-    )
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    out_dir = args.output_dir.resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        if args.quick:
+            print(f"Schnellmodus: Beispiel-Konfiguration -> {out_dir}")
+            cfg = example_config_pump()
+        else:
+            cfg = run_wizard(out_dir)
+    except (KeyboardInterrupt, EOFError) as exc:
+        print(f"\nAbgebrochen: {exc}")
+        print(f"\nKeine Dateien geschrieben. Ordner waere gewesen:\n  {out_dir}")
+        return 1
+    except Exception as exc:
+        print(f"\nFehler: {exc}")
+        traceback.print_exc()
+        return 1
+
+    try:
+        writes = build_zigbee_writes(cfg)
+        written = write_output_files(cfg, writes, out_dir)
+    except Exception as exc:
+        print(f"\nFehler beim Erzeugen der Dateien: {exc}")
+        traceback.print_exc()
+        return 1
 
     print_summary(cfg, writes, out_dir)
 
-    print("\n--- Nächste Schritte ---")
+    print("\n--- Geschriebene Dateien ---")
+    for path in written:
+        print(f"  {path}")
+
+    print("\n--- Naechste Schritte ---")
     print("  1. IEEE in apply_campernode_ha.yaml eintragen (falls noch leer)")
-    print("  2. In HA: Entwicklerwerkzeuge → Dienste → YAML aus Datei oder Skript")
+    print("  2. In HA: Entwicklerwerkzeuge -> Dienste -> YAML-Skript ausfuehren")
     print("  3. Nach Profilwechsel (pump/relay): ggf. in ZHA neu pairen")
     print("  4. Schalter auf Endpoint 1 testen (Relay oder Pump)")
     return 0
