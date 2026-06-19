@@ -23,31 +23,17 @@
       font-family: "Segoe UI", system-ui, sans-serif;
       background: var(--bg);
       color: var(--text);
-      line-height: 1.5;
+      line-height: 1.55;
       min-height: 100vh;
     }
-    .wrap {
-      max-width: 640px;
-      margin: 0 auto;
-      padding: 24px 16px 48px;
-    }
-    header {
-      text-align: center;
-      margin-bottom: 28px;
-    }
-    header h1 {
-      font-size: 1.75rem;
-      font-weight: 600;
-      margin: 0 0 8px;
-    }
+    .wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+    header { text-align: center; margin-bottom: 28px; }
+    header h1 { font-size: 1.75rem; font-weight: 600; margin: 0 0 8px; }
     header p { color: var(--muted); margin: 0; }
-    .progress {
-      display: flex;
-      gap: 6px;
-      margin-bottom: 24px;
-    }
+    .progress { display: flex; gap: 4px; margin-bottom: 24px; flex-wrap: wrap; }
     .progress span {
       flex: 1;
+      min-width: 24px;
       height: 4px;
       border-radius: 2px;
       background: #2a3544;
@@ -61,17 +47,11 @@
       padding: 24px;
       box-shadow: 0 8px 32px rgba(0,0,0,0.35);
     }
-    .card h2 {
-      font-size: 1.25rem;
-      margin: 0 0 12px;
-    }
+    .card h2 { font-size: 1.25rem; margin: 0 0 12px; }
+    .card h3 { font-size: 1rem; margin: 20px 0 8px; color: var(--accent); }
     .card p, .card li { color: var(--muted); }
     .card p strong, .card li strong { color: var(--text); }
-    label {
-      display: block;
-      margin: 16px 0 6px;
-      font-weight: 500;
-    }
+    label { display: block; margin: 16px 0 6px; font-weight: 500; }
     select, input[type="text"] {
       width: 100%;
       padding: 12px 14px;
@@ -85,16 +65,9 @@
       outline: 2px solid var(--accent);
       border-color: transparent;
     }
-    .hint {
-      font-size: 0.875rem;
-      color: var(--warn);
-      margin-top: 8px;
-    }
-    .nav {
-      display: flex;
-      gap: 12px;
-      margin-top: 24px;
-    }
+    .hint { font-size: 0.875rem; color: var(--warn); margin-top: 8px; }
+    .ok-hint { font-size: 0.875rem; color: var(--ok); margin-top: 8px; }
+    .nav { display: flex; gap: 12px; margin-top: 24px; }
     button {
       flex: 1;
       padding: 14px 20px;
@@ -103,61 +76,12 @@
       font-size: 1rem;
       font-weight: 600;
       cursor: pointer;
-      transition: transform 0.1s, opacity 0.2s;
+      transition: transform 0.1s;
     }
     button:active { transform: scale(0.98); }
-    .btn-primary {
-      background: var(--accent);
-      color: #fff;
-    }
+    .btn-primary { background: var(--accent); color: #fff; }
     .btn-primary:hover { background: #4aabf0; }
-    .btn-secondary {
-      background: #2a3544;
-      color: var(--text);
-    }
-    .btn-secondary:hover { background: #354556; }
-    .hidden { display: none !important; }
-    .result-box {
-      background: var(--bg);
-      border-radius: 8px;
-      padding: 16px;
-      margin: 16px 0;
-      border-left: 4px solid var(--ok);
-    }
-    .result-box h3 {
-      margin: 0 0 12px;
-      font-size: 1rem;
-      color: var(--ok);
-    }
-    .steps-list {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-      counter-reset: step;
-    }
-    .steps-list li {
-      counter-increment: step;
-      padding: 10px 0 10px 36px;
-      position: relative;
-      border-bottom: 1px solid #2a3544;
-    }
-    .steps-list li:last-child { border-bottom: none; }
-    .steps-list li::before {
-      content: counter(step);
-      position: absolute;
-      left: 0;
-      top: 10px;
-      width: 24px;
-      height: 24px;
-      background: var(--accent-dim);
-      border-radius: 50%;
-      font-size: 0.75rem;
-      font-weight: 700;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #fff;
-    }
+    .btn-secondary { background: #2a3544; color: var(--text); }
     .badge {
       display: inline-block;
       background: #2a3544;
@@ -165,15 +89,56 @@
       border-radius: 4px;
       font-size: 0.85rem;
       color: var(--accent);
+      word-break: break-all;
     }
-    ol.simple { padding-left: 1.25rem; }
-    ol.simple li { margin-bottom: 8px; color: var(--muted); }
-    .print-hint {
-      text-align: center;
-      margin-top: 16px;
-      font-size: 0.875rem;
+    ol.simple, ul.simple { padding-left: 1.25rem; }
+    ol.simple li, ul.simple li { margin-bottom: 10px; color: var(--muted); }
+    pre {
+      background: var(--bg);
+      padding: 12px;
+      border-radius: 8px;
+      overflow: auto;
+      font-size: 0.8rem;
+      margin: 8px 0;
+      border: 1px solid #2a3544;
+    }
+    code { color: var(--accent); font-size: 0.9em; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 0.95rem; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #2a3544; }
+    th { color: var(--text); }
+    .result-box {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 16px;
+      margin: 16px 0;
+      border-left: 4px solid var(--ok);
+    }
+    .result-box h3 { margin: 0 0 12px; font-size: 1rem; color: var(--ok); }
+    .when-table td:first-child { font-weight: 600; color: var(--text); white-space: nowrap; }
+    .steps-list {
+      list-style: none; padding: 0; margin: 0; counter-reset: step;
+    }
+    .steps-list li {
+      counter-increment: step;
+      padding: 10px 0 10px 36px;
+      position: relative;
+      border-bottom: 1px solid #2a3544;
       color: var(--muted);
     }
+    .steps-list li:last-child { border-bottom: none; }
+    .steps-list li::before {
+      content: counter(step);
+      position: absolute; left: 0; top: 10px;
+      width: 24px; height: 24px;
+      background: var(--accent-dim);
+      border-radius: 50%;
+      font-size: 0.75rem; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; color: #fff;
+    }
+    .tag-restart { color: var(--warn); font-weight: 600; }
+    .tag-pair { color: var(--accent); font-weight: 600; }
+    .hidden { display: none !important; }
+    .print-hint { text-align: center; margin-top: 16px; font-size: 0.875rem; color: var(--muted); }
     @media print {
       body { background: #fff; color: #000; }
       .card { box-shadow: none; border: 1px solid #ccc; }
@@ -185,60 +150,84 @@
   <div class="wrap">
     <header>
       <h1>CamperNode Einrichtung</h1>
-      <p>Schritt für Schritt — ohne Programmieren, alles in Home Assistant</p>
+      <p>Schritt für Schritt — ein ESP32 in Home Assistant (ZHA)</p>
     </header>
-
     <div class="progress" id="progress"></div>
-
     <div class="card" id="step-container"></div>
   </div>
 
   <script>
+    const RESERVED = [0, 8, 9];
+    const BOOT_GPIO = 9;
+    const LED_GPIO = 8;
     const STRAPPING = [4, 5, 8, 9, 15];
+
     const STEPS = [
-      { id: "welcome", title: "Willkommen" },
-      { id: "ha-setup", title: "Home Assistant" },
-      { id: "pair", title: "Verbinden" },
-      { id: "profile", title: "Was steuerst du?" },
-      { id: "pins", title: "Anschlüsse" },
+      { id: "welcome", title: "Start" },
+      { id: "ha-files", title: "Dateien" },
+      { id: "ha-start", title: "HA Start" },
+      { id: "firmware", title: "Firmware" },
+      { id: "pair", title: "Koppeln" },
+      { id: "pins", title: "GPIO-Karte" },
+      { id: "apply", title: "In HA" },
       { id: "done", title: "Fertig" },
     ];
 
+    const ASSIGNABLE_PINS = [];
+    for (let i = 0; i <= 23; i++) {
+      if (i === 0 || i === LED_GPIO || i === BOOT_GPIO) continue;
+      if (STRAPPING.includes(i)) continue;
+      ASSIGNABLE_PINS.push(i);
+    }
+
     const state = {
       step: 0,
-      haQuirkDone: false,
-      profile: "relay",
-      buttonPin: "0",
-      outputPin: "6",
+      filesDone: false,
+      integrationDone: false,
+      firmwareDone: false,
+      enableTemp: false,
+      pinRoles: { 3: "O" },
+      pinMap: "3:O",
+      tempPin: "6",
       nodeName: "campernode",
     };
 
-    function gpioOptions(includeNone) {
-      let html = "";
-      if (includeNone) {
-        html += '<option value="0">Kein Taster (nur per App schalten)</option>';
+    function roleOptions(selected) {
+      return [
+        ["", "— nicht verwendet"],
+        ["I", "Eingang (Taster/Sensor)"],
+        ["O", "Ausgang (Relais/LED)"],
+      ].map(([v, l]) =>
+        `<option value="${v}"${v === selected ? " selected" : ""}>${l}</option>`
+      ).join("");
+    }
+
+    function buildPinMapFromRoles(roles) {
+      const parts = [];
+      for (const pin of ASSIGNABLE_PINS) {
+        const role = roles[pin];
+        if (role === "O" || role === "I") parts.push(`${pin}:${role}`);
       }
+      return parts.join(",");
+    }
+
+    function gpioOptions() {
+      let html = "";
       for (let i = 0; i <= 23; i++) {
-        const bad = STRAPPING.includes(i);
-        const label = bad
-          ? `GPIO ${i} — nicht verwenden (System-Pin)`
-          : `GPIO ${i}`;
-        html += `<option value="${i}"${bad ? " disabled" : ""}>${label}</option>`;
+        if (i === 0 || i === LED_GPIO || i === BOOT_GPIO || STRAPPING.includes(i)) continue;
+        html += `<option value="${i}">GPIO ${i}</option>`;
       }
       return html;
     }
 
     function renderProgress() {
-      const el = document.getElementById("progress");
-      el.innerHTML = STEPS.map((s, i) => {
-        let cls = "";
-        if (i < state.step) cls = "done";
-        else if (i === state.step) cls = "active";
+      document.getElementById("progress").innerHTML = STEPS.map((s, i) => {
+        let cls = i < state.step ? "done" : i === state.step ? "active" : "";
         return `<span class="${cls}" title="${s.title}"></span>`;
       }).join("");
     }
 
-    function navButtons(showBack, nextLabel, onNext) {
+    function navButtons(showBack, nextLabel) {
       return `
         <div class="nav">
           ${showBack ? '<button type="button" class="btn-secondary" id="btn-back">Zurück</button>' : ""}
@@ -246,16 +235,20 @@
         </div>`;
     }
 
-    function profileLabel() {
-      return state.profile === "pump" ? "Pumpe" : "Relais";
-    }
-
-    function profileEnum() {
-      return state.profile === "pump" ? "pump" : "relay";
-    }
-
-    function switchLabel() {
-      return state.profile === "pump" ? "Pumpe" : "Relais";
+    function whenTable() {
+      return `
+        <table class="when-table">
+          <thead><tr><th>Aktion</th><th>Wann?</th></tr></thead>
+          <tbody>
+            <tr><td>Home Assistant <span class="tag-restart">neu starten</span></td><td>Nach dem Kopieren von Quirk + Integration (einmalig pro HA)</td></tr>
+            <tr><td>ZHA <span class="tag-pair">Gerät hinzufügen</span></td><td>Pro neuem ESP32 einmal (Permit Join → einschalten)</td></tr>
+            <tr><td><strong>GPIO-Karte</strong> speichern</td><td>Auf der Geräteseite — Textfeld „GPIO-Karte"</td></tr>
+            <tr><td>ESP <span class="tag-restart">Neustart</span></td><td>Automatisch ~2 s nach dem Speichern der GPIO-Karte</td></tr>
+            <tr><td><strong>Neu konfigurieren</strong></td><td>Am CamperNode-Gerät (Zahnrad) — ca. 30 s nach GPIO-Karte, damit Schalter erscheinen</td></tr>
+            <tr><td>Erneut koppeln</td><td>Nur wenn Schalter fehlen trotz „Neu konfigurieren" — sonst nicht nötig</td></tr>
+            <tr><td>Firmware flashen</td><td>Bei neuem Board oder wenn Eingänge falsch angezeigt werden (alte Firmware)</td></tr>
+          </tbody>
+        </table>`;
     }
 
     function renderStep() {
@@ -265,110 +258,199 @@
 
       if (s.id === "welcome") {
         c.innerHTML = `
-          <h2>So einfach geht's</h2>
-          <p>Du brauchst <strong>keinen Code</strong> und keine YAML-Dateien. Nach dem Einbinden in Home Assistant stellst du alles über normale Schieberegler und Auswahlfelder ein.</p>
+          <h2>Überblick</h2>
+          <p>Du richtest <strong>einen ESP32 CamperNode</strong> in Home Assistant ein. Kein YAML für die GPIO-Karte, kein Entwicklerwerkzeug.</p>
           <ol class="simple">
-            <li>Einmalig: kleine Erweiterung in Home Assistant kopieren (5 Minuten)</li>
-            <li>CamperNode per Zigbee verbinden</li>
-            <li>Profil, Taster-Pin und Ausgangs-Pin in der Geräte-Übersicht setzen</li>
+            <li><strong>Einmalig (Home Assistant):</strong> Quirk + Integration kopieren → HA neu starten</li>
+            <li><strong>Pro ESP32:</strong> koppeln → GPIO-Karte eintragen → kurz warten → „Neu konfigurieren"</li>
           </ol>
-          <p>Diese Anleitung merkt sich nichts — du kannst sie ausdrucken oder am Ende die Zusammenfassung fotografieren.</p>
-          ${navButtons(false, "Los geht's", null)}
+          <p>Mehrere ESP32? Schritte 4–7 für <strong>jeden</strong> Node wiederholen — jeder bekommt seine eigene GPIO-Karte.</p>
+          ${whenTable()}
+          ${navButtons(false, "Los geht's")}
         `;
       }
 
-      if (s.id === "ha-setup") {
+      if (s.id === "ha-files") {
         c.innerHTML = `
-          <h2>Einmalige Einrichtung in Home Assistant</h2>
-          <p>Das musst du nur <strong>einmal</strong> machen, damit Home Assistant die CamperNode-Einstellungen anzeigt.</p>
+          <h2>Schritt 1 — Dateien in Home Assistant kopieren</h2>
+          <p>Einmalig auf dem Home-Assistant-Server (z. B. per Samba, File Editor oder Studio Code Server).</p>
+
+          <h3>A) ZHA-Quirk</h3>
           <ol class="simple">
             <li>Ordner anlegen: <span class="badge">/config/custom_zha_quirks/</span></li>
-            <li>Datei <span class="badge">campernode.py</span> aus dem CamperOS-Projekt dort hineinkopieren<br>
-                <small>(Pfad im Projekt: integrations/homeassistant/zha/campernode.py)</small></li>
-            <li>In <span class="badge">configuration.yaml</span> ergänzen:
-              <pre style="background:#0f1419;padding:12px;border-radius:8px;overflow:auto;font-size:0.8rem;margin-top:8px">zha:
+            <li>Datei kopieren:<br>
+              <span class="badge">integrations/homeassistant/zha/campernode.py</span><br>
+              → <span class="badge">/config/custom_zha_quirks/campernode.py</span></li>
+          </ol>
+
+          <h3>B) GPIO-Karte-Integration</h3>
+          <ol class="simple">
+            <li>Gesamten Ordner kopieren:<br>
+              <span class="badge">integrations/homeassistant/campernode_config/</span><br>
+              → <span class="badge">/config/custom_components/campernode_config/</span></li>
+            <li>Enthalten sein müssen u. a.: <code>__init__.py</code>, <code>text.py</code>, <code>pin_map.py</code>, <code>config_flow.py</code>, <code>manifest.json</code>, Ordner <code>translations/</code></li>
+            <li><strong>Nicht</strong> kopieren: <code>__pycache__</code></li>
+          </ol>
+
+          <h3>C) configuration.yaml</h3>
+          <p>Nur den Quirk-Pfad — <strong>kein</strong> <code>campernode_config:</code> Eintrag!</p>
+          <pre>zha:
   enable_quirks: true
   custom_quirks_path: /config/custom_zha_quirks/</pre>
-            </li>
-            <li>Home Assistant <strong>neu starten</strong></li>
-            <li>In den Logs nach „Loaded custom quirks" suchen (optional)</li>
-          </ol>
+
           <label>
-            <input type="checkbox" id="quirk-done" ${state.haQuirkDone ? "checked" : ""}>
-            Das habe ich erledigt (oder war schon eingerichtet)
+            <input type="checkbox" id="files-done" ${state.filesDone ? "checked" : ""}>
+            Dateien sind kopiert
           </label>
-          ${navButtons(true, "Weiter", null)}
+          ${navButtons(true, "Weiter")}
+        `;
+      }
+
+      if (s.id === "ha-start") {
+        c.innerHTML = `
+          <h2>Schritt 2 — Home Assistant starten & Integration</h2>
+          <ol class="simple">
+            <li><strong>Home Assistant vollständig neu starten</strong> (Einstellungen → System → Neustart)</li>
+            <li><strong>Einstellungen → Geräte & Dienste → Integration hinzufügen</strong></li>
+            <li><strong>„CamperNode Config"</strong> suchen und hinzufügen<br>
+              <small>(Melding „single_instance_allowed" = schon installiert — OK)</small></li>
+            <li>Prüfen: Unter Geräte & Dienste erscheint <span class="badge">CamperNode Config</span></li>
+          </ol>
+          <p class="hint">Falls „CamperNode Config" fehlt: Logs prüfen (fehlende Datei / Syntaxfehler). <code>pin_map.py</code> muss vollständig sein.</p>
+          <label>
+            <input type="checkbox" id="integration-done" ${state.integrationDone ? "checked" : ""}>
+            HA neu gestartet und CamperNode Config aktiv
+          </label>
+          ${navButtons(true, "Weiter")}
+        `;
+      }
+
+      if (s.id === "firmware") {
+        c.innerHTML = `
+          <h2>Schritt 3 — Firmware auf dem ESP32 (bei Bedarf)</h2>
+          <p>Überspringen, wenn der Node schon mit aktueller CamperNode-Firmware läuft.</p>
+          <ol class="simple">
+            <li>Projekt mit ESP-IDF bauen und auf den ESP32 flashen</li>
+            <li>Seriell prüfen: <code>CamperNode OS v0.1.0 booting</code></li>
+            <li>Neue Firmware bringt u. a.: GPIO-Karte per Zigbee, korrekte Eingänge (nicht dauerhaft „an"), verzögerter Neustart nach GPIO-Karte</li>
+          </ol>
+          <p class="ok-hint">Nach dem Flashen: ESP neu starten lassen, dann mit Schritt „Koppeln" weitermachen.</p>
+          <label>
+            <input type="checkbox" id="firmware-done" ${state.firmwareDone ? "checked" : ""}>
+            Firmware ist aktuell / übersprungen
+          </label>
+          ${navButtons(true, "Weiter")}
         `;
       }
 
       if (s.id === "pair") {
         c.innerHTML = `
-          <h2>CamperNode verbinden</h2>
+          <h2>Schritt 4 — ESP32 in ZHA koppeln</h2>
+          <p>Pro neuem ESP32 einmal:</p>
           <ol class="simple">
-            <li>Home Assistant → <strong>Einstellungen</strong> → <strong>Geräte &amp; Dienste</strong> → <strong>Zigbee</strong></li>
-            <li><strong>Gerät hinzufügen</strong> → Netzwerk öffnen (Permit Join)</li>
-            <li>CamperNode einschalten — er meldet sich von selbst</li>
-            <li>Fertig, wenn ein Gerät <span class="badge">CamperNode OS</span> erscheint</li>
+            <li><strong>Einstellungen → Geräte & Dienste → Zigbee Home Automation</strong></li>
+            <li><strong>Gerät hinzufügen</strong> → Zigbee-Netzwerk öffnen (Permit Join)</li>
+            <li>CamperNode einschalten — er joint automatisch (Network Steering)</li>
+            <li>Warten, bis <span class="badge">CamperNode OS</span> (Hersteller CamperOS) erscheint</li>
           </ol>
-          <p>Ohne Quirk funktioniert der Schalter auf Endpoint 1 trotzdem. Für Profil und GPIO-Pins brauchst du die Quirk aus dem vorherigen Schritt.</p>
-          ${navButtons(true, "Weiter", null)}
-        `;
-      }
-
-      if (s.id === "profile") {
-        c.innerHTML = `
-          <h2>Was möchtest du steuern?</h2>
-          <label for="profile">Profil</label>
-          <select id="profile">
-            <option value="relay" ${state.profile === "relay" ? "selected" : ""}>Relais (Licht, allgemeiner Schalter)</option>
-            <option value="pump" ${state.profile === "pump" ? "selected" : ""}>Pumpe (Wasserpumpe, Ventil)</option>
-          </select>
-          <p class="hint">Nach dem Wechsel startet der Knoten neu. In Home Assistant unter dem Gerät <strong>Profil</strong> auswählen und speichern.</p>
-          ${navButtons(true, "Weiter", null)}
+          <p>Jetzt siehst du u. a. <strong>Restart</strong>, <strong>Log level</strong>, <strong>Temperatur aktiv</strong> — noch <em>keine</em> GPIO-Schalter (GPIO-Karte fehlt noch).</p>
+          <p class="hint">Optional: Gerätenamen in ZHA ändern (z. B. „Relais Dachzelt").</p>
+          ${navButtons(true, "GPIO-Karte planen")}
         `;
       }
 
       if (s.id === "pins") {
+        const rows = ASSIGNABLE_PINS.map(pin => `
+          <tr>
+            <td>GPIO ${pin}</td>
+            <td><select class="pin-role" data-pin="${pin}">${roleOptions(state.pinRoles[pin] || "")}</select></td>
+          </tr>`).join("");
         c.innerHTML = `
-          <h2>Welche Kabel wo?</h2>
-          <p>Trage die GPIO-Nummern ein, die du am ESP32-C6 angeschlossen hast. Unbekannt? Auf dem Board steht oft „GPIO10" o.ä.</p>
-          <label for="button-pin">Taster (optional)</label>
-          <select id="button-pin">${gpioOptions(true)}</select>
-          <label for="output-pin">Relais / Pumpe (Ausgang)</label>
-          <select id="output-pin">${gpioOptions(false)}</select>
-          <p class="hint">Pins 4, 5, 8, 9 und 15 nicht benutzen — das sind reservierte System-Pins am ESP32-C6.</p>
-          <label for="node-name">Name (optional)</label>
-          <input type="text" id="node-name" placeholder="z.B. camper-pumpe" value="${state.nodeName}">
-          ${navButtons(true, "Zusammenfassung", null)}
+          <h2>Schritt 5 — GPIO-Karte planen</h2>
+          <p>Wähle pro Pin <strong>einmal</strong> die Funktion. Logik (Relais bei Taster usw.) machst du in Home Assistant — nicht im ESP.</p>
+          <table>
+            <thead><tr><th>Pin</th><th>Funktion</th></tr></thead>
+            <tbody>
+              <tr><td>GPIO 0</td><td><em>Reserviert — nicht verwenden</em></td></tr>
+              <tr><td>GPIO ${BOOT_GPIO}</td><td><em>BOOT-Taster — <strong>immer Eingang</strong>, nicht in Karte eintragen</em></td></tr>
+              <tr><td>GPIO ${LED_GPIO}</td><td><em>Status-LED — reserviert</em></td></tr>
+              ${rows}
+            </tbody>
+          </table>
+          <p><strong>Format:</strong> <code>3:O</code> = Ausgang (Schalter), <code>10:I</code> = Eingang (Binary Sensor)</p>
+          <label>
+            <input type="checkbox" id="enable-temp" ${state.enableTemp ? "checked" : ""}>
+            DS18B20 Temperatur zusätzlich
+          </label>
+          <label for="temp-pin">Temperatur-Datenpin (GPIO)</label>
+          <select id="temp-pin">${gpioOptions()}</select>
+          <label for="node-name">Gerätename (Merkhilfe, optional)</label>
+          <input type="text" id="node-name" placeholder="z.B. camper-küche" value="${state.nodeName}">
+          ${navButtons(true, "Weiter")}
         `;
-        document.getElementById("button-pin").value = state.buttonPin;
-        document.getElementById("output-pin").value = state.outputPin;
+        document.getElementById("temp-pin").value = state.tempPin;
+      }
+
+      if (s.id === "apply") {
+        c.innerHTML = `
+          <h2>Schritt 6 — GPIO-Karte in Home Assistant eintragen</h2>
+          <ol class="simple">
+            <li>Gerät <strong>CamperNode OS</strong> öffnen (dein gekoppelter ESP)</li>
+            <li>Unter <strong>Konfiguration</strong> → Entität <strong>GPIO-Karte</strong></li>
+            <li>Exakt diesen Text einfügen und speichern:<br>
+              <pre id="copy-map">${state.pinMap || "(leer — zurück zu Schritt 5)"}</pre></li>
+            <li>ESP startet nach ~2 Sekunden automatisch neu</li>
+            <li><strong>30–60 Sekunden warten</strong> bis der Node wieder online ist</li>
+            <li>Am CamperNode-Gerät: <strong>Neu konfigurieren</strong> (Zahnrad-Button) klicken</li>
+            <li>Geräteseite neu laden — Schalter und Eingänge prüfen</li>
+          </ol>
+          ${state.enableTemp ? `
+          <h3>Temperatur (optional)</h3>
+          <ol class="simple">
+            <li><strong>Temperatur aktiv</strong> → einschalten (1)</li>
+            <li>Temperatur erscheint als eigener Sensor (Endpoint 2)</li>
+          </ol>` : ""}
+          <p class="hint">GPIO-Karte nochmal speichern löst ebenfalls eine automatische Entitäten-Aktualisierung aus.</p>
+          ${navButtons(true, "Zusammenfassung")}
+        `;
       }
 
       if (s.id === "done") {
-        const btnText = state.buttonPin === "0"
-          ? "Kein Taster — nur per Home Assistant schalten"
-          : `Taster-Pin = <strong>${state.buttonPin}</strong>`;
+        const outs = Object.entries(state.pinRoles).filter(([, r]) => r === "O").map(([p]) => `GPIO ${p}`);
+        const ins = Object.entries(state.pinRoles).filter(([, r]) => r === "I").map(([p]) => `GPIO ${p}`);
         c.innerHTML = `
-          <h2>Fertig — so stellst du es in Home Assistant ein</h2>
+          <h2>Fertig — Zusammenfassung</h2>
           <div class="result-box">
-            <h3>Deine Einstellungen</h3>
+            <h3>Dein ESP: ${state.nodeName}</h3>
             <ul class="steps-list">
-              <li>Gerät öffnen: <strong>CamperNode OS</strong></li>
-              <li><strong>Profil</strong> → <span class="badge">${profileLabel()}</span> (${profileEnum()})</li>
-              <li><strong>Taster-Pin</strong> → Zahl <strong>${state.buttonPin}</strong></li>
-              <li><strong>Ausgangs-Pin</strong> → Zahl <strong>${state.outputPin}</strong></li>
-              <li>Schalter testen: <strong>${switchLabel()}</strong> ein/aus</li>
+              <li><strong>GPIO-Karte:</strong> <code>${state.pinMap}</code></li>
+              <li><strong>Schalter (Ausgänge):</strong> ${outs.length ? outs.join(", ") : "—"}</li>
+              <li><strong>Eingänge in Karte:</strong> ${ins.length ? ins.join(", ") : "—"}</li>
+              <li><strong>Immer sichtbar:</strong> GPIO 9 BOOT (Eingang)</li>
+              ${state.enableTemp ? `<li><strong>Temperatur:</strong> aktiv, Pin GPIO ${state.tempPin}</li>` : ""}
             </ul>
           </div>
-          <p>${btnText}</p>
-          <p>Die Werte einfach in den Entitäten des Geräts eintragen — wie bei einem Thermostat die Temperatur. Kein YAML, kein Terminal.</p>
-          <p><strong>Neustart</strong>-Button am Gerät nur nach Profilwechsel nötig (passiert oft automatisch).</p>
+
+          <h3>Wann was tun?</h3>
+          ${whenTable()}
+
+          <h3>Checkliste „Funktioniert alles?"</h3>
+          <ul class="simple">
+            <li>GPIO-Karte auf Geräteseite sichtbar und gespeichert?</li>
+            <li>Schalter <code>GPIO …</code> für jeden <code>:O</code>-Pin?</li>
+            <li>Binary Sensor <code>GPIO 9 BOOT</code> + je <code>:I</code>-Pin?</li>
+            <li>Eingänge <strong>off</strong> wenn nicht gedrückt? (sonst: Firmware flashen)</li>
+            <li>Relais testweise ein-/ausschalten</li>
+          </ul>
+
+          <h3>Mehrere ESP32</h3>
+          <p>Schritte 4–6 für jeden weiteren Node wiederholen. HA-Einrichtung (Schritte 1–2) nur einmal.</p>
+
           <div class="nav">
             <button type="button" class="btn-secondary" id="btn-back">Zurück</button>
-            <button type="button" class="btn-primary" id="btn-print">Anleitung drucken</button>
+            <button type="button" class="btn-primary" id="btn-print">Ausdrucken / PDF</button>
           </div>
-          <p class="print-hint">Tipp: Screenshot oder Ausdruck mitnehmen zur Verkabelung.</p>
+          <p class="print-hint">Screenshot oder Ausdruck für die Verkabelung mitnehmen.</p>
         `;
       }
 
@@ -379,52 +461,44 @@
       const back = document.getElementById("btn-back");
       const next = document.getElementById("btn-next");
       const printBtn = document.getElementById("btn-print");
-
-      if (back) {
-        back.onclick = () => {
-          saveCurrentStep();
-          state.step = Math.max(0, state.step - 1);
-          renderStep();
-        };
-      }
-      if (next) {
-        next.onclick = () => {
-          if (!saveCurrentStep()) return;
-          state.step = Math.min(STEPS.length - 1, state.step + 1);
-          renderStep();
-        };
-      }
-      if (printBtn) {
-        printBtn.onclick = () => window.print();
-      }
+      if (back) back.onclick = () => { if (saveCurrentStep()) { state.step--; renderStep(); } };
+      if (next) next.onclick = () => { if (saveCurrentStep()) { state.step++; renderStep(); } };
+      if (printBtn) printBtn.onclick = () => window.print();
     }
 
     function saveCurrentStep() {
       const s = STEPS[state.step];
-      if (s.id === "ha-setup") {
-        const cb = document.getElementById("quirk-done");
-        state.haQuirkDone = cb && cb.checked;
-        if (!state.haQuirkDone) {
-          const ok = confirm(
-            "Ohne die Quirk-Erweiterung siehst du in Home Assistant keine Felder für Profil und GPIO-Pins.\n\nTrotzdem weiter?"
-          );
-          if (!ok) return false;
-        }
+      if (s.id === "ha-files") {
+        state.filesDone = !!document.getElementById("files-done")?.checked;
+        if (!state.filesDone && !confirm("Ohne kopierte Dateien funktioniert die GPIO-Karte nicht. Trotzdem weiter?")) return false;
       }
-      if (s.id === "profile") {
-        state.profile = document.getElementById("profile").value;
+      if (s.id === "ha-start") {
+        state.integrationDone = !!document.getElementById("integration-done")?.checked;
+      }
+      if (s.id === "firmware") {
+        state.firmwareDone = !!document.getElementById("firmware-done")?.checked;
       }
       if (s.id === "pins") {
-        state.buttonPin = document.getElementById("button-pin").value;
-        state.outputPin = document.getElementById("output-pin").value;
+        state.pinRoles = {};
+        document.querySelectorAll(".pin-role").forEach(sel => {
+          const pin = Number(sel.dataset.pin);
+          if (sel.value) state.pinRoles[pin] = sel.value;
+        });
+        state.pinMap = buildPinMapFromRoles(state.pinRoles);
+        state.enableTemp = document.getElementById("enable-temp").checked;
+        state.tempPin = document.getElementById("temp-pin").value;
         state.nodeName = document.getElementById("node-name").value.trim() || "campernode";
-        if (STRAPPING.includes(Number(state.outputPin))) {
-          alert("Der Ausgangs-Pin darf kein System-Pin (4, 5, 8, 9, 15) sein.");
+        const outs = Object.values(state.pinRoles).filter(r => r === "O").length;
+        if (outs === 0) {
+          alert("Mindestens einen Pin als Ausgang wählen.");
           return false;
         }
-        if (state.buttonPin !== "0" && STRAPPING.includes(Number(state.buttonPin))) {
-          alert("Der Taster-Pin darf kein System-Pin sein.");
-          return false;
+        if (state.enableTemp) {
+          const tp = Number(state.tempPin);
+          if (state.pinRoles[tp]) {
+            alert(`GPIO ${tp} ist schon belegt — anderen Temperatur-Pin wählen.`);
+            return false;
+          }
         }
       }
       return true;

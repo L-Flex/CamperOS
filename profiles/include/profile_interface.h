@@ -21,14 +21,6 @@ typedef struct logger logger_t;
 
 typedef enum {
     PROFILE_ID_RELAY = 0,
-    PROFILE_ID_PUMP,
-    PROFILE_ID_LIGHT,
-    PROFILE_ID_TANK,
-    PROFILE_ID_CLIMATE,
-    PROFILE_ID_FAN,
-    PROFILE_ID_BATTERY,
-    PROFILE_ID_SENSOR,
-    PROFILE_ID_CUSTOM,
     PROFILE_ID_MAX
 } profile_id_t;
 
@@ -39,7 +31,6 @@ typedef struct {
     logger_t    *logger;
 } profile_ctx_t;
 
-/** Zigbee entity descriptor — populated by profile for endpoint registration */
 typedef struct {
     uint8_t     endpoint_id;
     uint16_t    cluster_id;

@@ -23,6 +23,7 @@ void gpio_mgr_destroy(gpio_mgr_t *mgr);
 
 esp_err_t gpio_mgr_init(gpio_mgr_t *mgr);
 esp_err_t gpio_mgr_load_from_storage(gpio_mgr_t *mgr, storage_t *storage);
+esp_err_t gpio_mgr_resolve_pin_config(storage_t *storage, gpio_pin_config_t *cfg, size_t *count);
 esp_err_t gpio_mgr_apply_config(gpio_mgr_t *mgr, const gpio_pin_config_t *cfg, size_t count);
 
 esp_err_t gpio_mgr_write(gpio_mgr_t *mgr, uint8_t logical_id, bool value);

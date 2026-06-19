@@ -1,0 +1,9 @@
+{
+  "entity": {
+    "text": {
+      "gpio_pin_map": {
+        "name": "GPIO map"
+      }
+    }
+  }
+}

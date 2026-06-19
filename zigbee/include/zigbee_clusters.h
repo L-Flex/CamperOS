@@ -1,6 +1,6 @@
 #pragma once
 
-#include "camper_config.h"
+#include "camper_features.h"
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -27,6 +27,18 @@ typedef enum {
     /** Simple setup: GPIO pin numbers (0 = disabled). Builds gpio_config blob. */
     ZB_ATTR_BUTTON_GPIO      = 0x0008,
     ZB_ATTR_OUTPUT_GPIO      = 0x0009,
+    /** Bitmask: CAMPER_FEATURE_TEMPERATURE (0x01). */
+    ZB_ATTR_FEATURE_FLAGS    = 0x000A,
+    ZB_ATTR_TEMP_GPIO        = 0x000B,
+    /** Per-pin I/O map: "3:O,7:O,10:I". Set once; reboot after change. GPIO9 always input. */
+    ZB_ATTR_PIN_MAP           = 0x000C,
+    /** @deprecated — use ZB_ATTR_PIN_MAP */
+    ZB_ATTR_OUTPUT_PIN_LIST   = 0x000C,
+    ZB_ATTR_INPUT_PIN_LIST    = 0x000D,
+    /** Output bitmap — bit0 = first output pin, HA writable. */
+    ZB_ATTR_OUTPUT_STATE     = 0x000E,
+    /** Input bitmap — bit0 = BOOT/GPIO9, read-only, reported on change. */
+    ZB_ATTR_INPUT_STATE      = 0x000F,
 } zigbee_camper_attr_t;
 
 typedef enum {

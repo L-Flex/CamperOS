@@ -35,7 +35,6 @@ bool zigbee_mgr_is_joined(const zigbee_mgr_t *mgr);
 int8_t zigbee_mgr_get_rssi(const zigbee_mgr_t *mgr);
 
 void zigbee_mgr_report_relay_state(bool on);
-void zigbee_mgr_report_pump_state(bool on);
 
 #ifdef __cplusplus
 }

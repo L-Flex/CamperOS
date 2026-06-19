@@ -16,7 +16,7 @@ Dieses Skript ist nur noch fuer komplexe GPIO-Layouts oder Automatisierung noeti
 Verwendung:
   python tools/campernode_config_wizard.py
 
-Cluster 0xFC00 auf Endpoint 10 — siehe zigbee/include/zigbee_clusters.h
+Cluster 0xFB00 auf Endpoint 10 — siehe zigbee/include/zigbee_clusters.h
 """
 
 from __future__ import annotations
@@ -35,10 +35,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parent
 DEFAULT_OUT_DIR = PROJECT_ROOT / "campernode_config_output"
 
-CAMPER_CLUSTER_ID = 0xFC00
+CAMPER_CLUSTER_ID = 0xFB00
 CONFIG_ENDPOINT = 10
 
 STRAPPING_PINS = {4, 5, 8, 9, 15}
+BOOT_BUTTON_GPIO = 9
 MAX_GPIO_PINS = 24
 GPIO_STRUCT = struct.Struct("<BBBBHHB5s")  # gpio_pin_config_t (ESP32)
 
@@ -180,10 +181,13 @@ def prompt_int(text: str, default: int | None = None, min_v: int | None = None, 
         return value
 
 
-def prompt_gpio_pin(allow_strapping: bool = False) -> int:
+def prompt_gpio_pin(*, for_button: bool = False) -> int:
     while True:
         pin = prompt_int("  GPIO-Nummer (ESP32-C6)", min_v=0, max_v=30)
-        if pin in STRAPPING_PINS and not allow_strapping:
+        if pin in STRAPPING_PINS:
+            if for_button and pin == BOOT_BUTTON_GPIO:
+                print("  GPIO 9 = DevKit BOOT-Taster (nur im Betrieb, nicht beim Reset gedrückt halten).")
+                return pin
             print(f"  Warnung: GPIO {pin} ist ein Strapping-Pin ({sorted(STRAPPING_PINS)}).")
             if not prompt_yes_no("  Trotzdem verwenden?", default=False):
                 continue
@@ -293,7 +297,7 @@ def wizard_gpio_for_relay_or_pump(cfg: CamperConfig, output_func: int) -> None:
     print("\n--- GPIO: Taster (optional) ---")
     if prompt_yes_no("Physischen Taster verwenden?", default=True):
         print("  Logische ID profile_bind=0 (Standard im Relais/Pumpen-Profil)")
-        pin = prompt_gpio_pin()
+        pin = prompt_gpio_pin(for_button=True)
         flags = prompt_flags()
         if not (flags & GPIO_FLAGS["pullup"]):
             if prompt_yes_no("  Pull-up aktivieren? (üblich bei Taster gegen GND)", default=True):
@@ -342,7 +346,7 @@ def run_wizard(out_dir: Path) -> CamperConfig:
     print(" CamperNode OS — Konfigurations-Assistent")
     print("=" * 60)
     print(f"\nAusgabe-Ordner:\n  {out_dir.resolve()}\n")
-    print("Dieses Tool erzeugt Zigbee-Schreibbefehle fuer Cluster 0xFC00")
+    print("Dieses Tool erzeugt Zigbee-Schreibbefehle fuer Cluster 0xFB00")
     print(f"(Endpoint {CONFIG_ENDPOINT}). Senden z.B. ueber Home Assistant ZHA.")
     print("\nTipp: Alle Fragen durchgehen bis zur Zusammenfassung am Ende.")
     print("      Erst dann werden die Dateien geschrieben.\n")

@@ -2,30 +2,12 @@
 
 CamperNode uses **ZHA** (Zigbee Home Automation) directly — no MQTT bridge required.
 
-## Einfache Einrichtung (ohne Code)
+## Schnellstart
 
-**Für alle ohne Programmierkenntnisse:**
-
-1. Doppelklick auf `tools/einrichtung.bat` (Windows) oder `tools/einrichtung.html` im Browser öffnen
-2. Die Schritte durchgehen — am Ende steht, welche Werte du in Home Assistant setzen musst
-3. Nach dem Pairing im Gerät **CamperNode OS** diese Entitäten nutzen:
-
-| Entität | Was du einstellst |
-|---------|-------------------|
-| **Profil** | Relais oder Pumpe |
-| **Taster-Pin** | GPIO-Nummer des Tasters (0 = kein Taster) |
-| **Ausgangs-Pin** | GPIO-Nummer für Relais/Pumpe |
-| **Relais** / **Pumpe** | Schalter zum Testen |
-
-Kein YAML, keine Hex-Daten, kein Python nötig.
-
-> **Firmware:** GPIO-Pins per ZHA setzen funktioniert ab Firmware mit Attributen `0x0008` / `0x0009`. Nach dem Flashen der aktuellen Version neu pairen oder HA neu starten, damit die Quirk die neuen Entitäten lädt.
-
-## Install the custom quirk
-
-1. On your Home Assistant host, create a folder, e.g. `/config/custom_zha_quirks/`
-2. Copy `campernode.py` into that folder
-3. Add to `configuration.yaml`:
+1. **Quirk** installieren: `campernode.py` → `/config/custom_zha_quirks/`
+2. **GPIO-Karte-Integration** installieren: `campernode_config/` → `/config/custom_components/campernode_config/`  
+   (Details: [campernode_config/README.md](../campernode_config/README.md))
+3. In `configuration.yaml` nur den Quirk-Pfad (kein `campernode_config:`):
 
 ```yaml
 zha:
@@ -33,26 +15,38 @@ zha:
   custom_quirks_path: /config/custom_zha_quirks/
 ```
 
-4. Restart Home Assistant
+4. Home Assistant neu starten, CamperNode koppeln
+5. **Einstellungen → Geräte & Dienste → Integration hinzufügen → „CamperNode Config“**
+6. Auf der Geräteseite **GPIO-Karte** eintragen (z. B. `2:I,3:O,10:I,16:O,20:O,23:O`)
+7. ~30 s warten → am Gerät **Neu konfigurieren** → GPIO-Schalter/Eingänge prüfen
 
-You should see *"Loaded custom quirks"* in the logs.
+## GPIO-Karte
+
+| Syntax | Bedeutung |
+|--------|-----------|
+| `3:O` | GPIO 3 = Ausgang (Schalter) |
+| `10:I` | GPIO 10 = Eingang (Binary Sensor) |
+
+Nicht eintragen: **GPIO 0**, **GPIO 8** (LED), **GPIO 9** (BOOT — erscheint **immer** als Eingang, nicht in Karte eintragen).
+
+## Entitäten (nach gültiger GPIO-Karte + Neu konfigurieren)
+
+| Entität | Beschreibung |
+|---------|--------------|
+| **GPIO-Karte** | Pin-Belegung (Textfeld) |
+| **GPIO 3**, **GPIO 16**, … | Schalter pro `:O`-Pin |
+| **GPIO 9 BOOT**, **GPIO 2**, … | Binary Sensor — BOOT immer, weitere pro `:I`-Pin |
+| Temperatur aktiv, Log level, Uptime, … | Konfiguration / Diagnose |
+
+## Mehrere ESP32
+
+Pro CamperNode erscheint automatisch eine eigene **GPIO-Karte** auf der jeweiligen Geräteseite — kein Entwicklerwerkzeug nötig.
 
 ## Pairing
 
-1. ZHA → **Add device** → permit join
-2. Power the CamperNode; it joins automatically (network steering)
-
-## Entities
-
-| Endpoint | What ZHA creates |
-|----------|------------------|
-| **1** | Standard **switch** (HA on/off light — relay) or **Pump** switch (on/off output device type) |
-| **10** | Profile, **Taster-Pin**, **Ausgangs-Pin**, log level, uptime, firmware, RSSI, restart / factory reset / OTA buttons |
-
-Endpoint 1 works without the quirk. The quirk is needed for manufacturer cluster `0xFC00` on endpoint 10.
-
-Advanced users can still write the raw `gpio_config` blob via **ZHA → Manage Zigbee device → Clusters**, or use `tools/campernode_config_wizard.py` for complex GPIO layouts.
+1. ZHA → **Gerät hinzufügen** → Join erlauben
+2. CamperNode einschalten (Network Steering)
 
 ## Contributing upstream
 
-If this quirk works well on your hardware, consider opening a PR to [zha-device-handlers](https://github.com/zigpy/zha-device-handlers) so other users get it built-in.
+If this quirk works well on your hardware, consider opening a PR to [zha-device-handlers](https://github.com/zigpy/zha-device-handlers).

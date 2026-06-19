@@ -6,7 +6,6 @@
 #include "zigbee_mgr.h"
 #include "zigbee_device.h"
 #include "profile_relay.h"
-#include "profile_pump.h"
 
 #include <stdlib.h>
 
@@ -85,9 +84,4 @@ int8_t zigbee_mgr_get_rssi(const zigbee_mgr_t *mgr)
 void zigbee_mgr_report_relay_state(bool on)
 {
     zigbee_device_report_on_off(profile_relay_get_endpoint(), on);
-}
-
-void zigbee_mgr_report_pump_state(bool on)
-{
-    zigbee_device_report_on_off(profile_pump_get_endpoint(), on);
 }

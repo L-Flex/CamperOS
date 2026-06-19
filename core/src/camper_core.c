@@ -8,6 +8,7 @@
 #include "event_types.h"
 #include "storage.h"
 #include "profile_mgr.h"
+#include "status_led.h"
 #include "zigbee_mgr.h"
 #include "ota_mgr.h"
 
@@ -131,6 +132,11 @@ static esp_err_t core_init_gpio(camper_core_t *core)
     if (err != ESP_OK) {
         core_log_init_result(core->deps.logger, "gpio", err);
         return err;
+    }
+
+    err = status_led_init();
+    if (err != ESP_OK) {
+        logger_info(core->deps.logger, TAG, "status LED init skipped");
     }
 
     if (core->deps.storage != NULL) {

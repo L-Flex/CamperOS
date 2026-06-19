@@ -1,0 +1,20 @@
+{
+  "config": {
+    "abort": {
+      "single_instance_allowed": "CamperNode Config ist bereits eingerichtet."
+    },
+    "step": {
+      "user": {
+        "title": "CamperNode Config",
+        "description": "Fügt pro CamperNode-Gerät ein GPIO-Karte-Textfeld auf der Geräteseite hinzu."
+      }
+    }
+  },
+  "entity": {
+    "text": {
+      "gpio_pin_map": {
+        "name": "GPIO-Karte"
+      }
+    }
+  }
+}

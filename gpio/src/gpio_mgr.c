@@ -4,7 +4,11 @@
  */
 
 #include "gpio_mgr.h"
+#include "board_config.h"
+#include "board_gpio.h"
 #include "storage.h"
+#include "gpio_io.h"
+#include "camper_features.h"
 #include "event_types.h"
 
 #include "driver/gpio.h"
@@ -33,17 +37,6 @@ struct gpio_mgr {
 };
 
 static gpio_mgr_t *s_mgr_for_isr = NULL;
-
-static bool is_strapping_pin(uint8_t pin)
-{
-    const uint8_t strapping[] = CAMPER_BOARD_STRAPPING_PINS;
-    for (size_t i = 0; i < CAMPER_BOARD_STRAPPING_COUNT; i++) {
-        if (strapping[i] == pin) {
-            return true;
-        }
-    }
-    return false;
-}
 
 static gpio_slot_t *gpio_find_by_bind(gpio_mgr_t *mgr, uint8_t logical_id)
 {
@@ -204,6 +197,10 @@ static esp_err_t gpio_configure_slot(gpio_mgr_t *mgr, gpio_slot_t *slot)
             if (slot->cfg.flags & GPIO_FLAG_INVERT) {
                 slot->last_button_level = !slot->last_button_level;
             }
+            if (slot->cfg.pin == CAMPER_BOARD_BOOT_BUTTON_GPIO) {
+                ESP_LOGI(TAG, "onboard BOOT button on GPIO %u (runtime only — do not hold at reset)",
+                         (unsigned)slot->cfg.pin);
+            }
         }
         return ESP_OK;
     }
@@ -260,6 +257,111 @@ esp_err_t gpio_mgr_init(gpio_mgr_t *mgr)
     return ESP_OK;
 }
 
+static size_t gpio_build_simple_pin_config(uint8_t button_pin, uint8_t output_pin,
+                                           gpio_pin_config_t *cfg, size_t cfg_max)
+{
+    size_t n = 0;
+    if (button_pin > 0 && n < cfg_max) {
+        cfg[n++] = (gpio_pin_config_t){
+            .pin = button_pin,
+            .function = GPIO_FUNC_BUTTON,
+            .flags = GPIO_FLAG_PULLUP,
+            .profile_bind = 0,
+            .debounce_ms = 50,
+        };
+    }
+    if (output_pin > 0 && n < cfg_max) {
+        cfg[n++] = (gpio_pin_config_t){
+            .pin = output_pin,
+            .function = GPIO_FUNC_RELAY,
+            .flags = GPIO_FLAG_NONE,
+            .profile_bind = 1,
+        };
+    }
+    return n;
+}
+
+esp_err_t gpio_mgr_resolve_pin_config(storage_t *storage, gpio_pin_config_t *cfg, size_t *count)
+{
+    if (storage == NULL || cfg == NULL || count == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    esp_err_t err = storage_load_gpio_config(storage, cfg, count);
+    if (err != ESP_OK || *count > 0) {
+        return err;
+    }
+
+    char pin_map[CAMPER_IO_PIN_MAP_MAX_LEN] = "";
+    storage_get_string(storage, CAMPER_NVS_NS_SETTINGS, CAMPER_KEY_PIN_MAP,
+                       pin_map, sizeof(pin_map));
+
+    if (pin_map[0] == '\0') {
+        char out_list[48] = "";
+        char in_list[48] = "";
+        storage_get_string(storage, CAMPER_NVS_NS_SETTINGS, CAMPER_KEY_OUTPUT_PIN_LIST,
+                           out_list, sizeof(out_list));
+        storage_get_string(storage, CAMPER_NVS_NS_SETTINGS, CAMPER_KEY_INPUT_PIN_LIST,
+                           in_list, sizeof(in_list));
+        if (out_list[0] != '\0' || in_list[0] != '\0') {
+            gpio_io_migrate_lists_to_map(out_list, in_list, pin_map, sizeof(pin_map));
+        }
+    }
+
+    if (pin_map[0] != '\0') {
+        uint8_t temp_gpio = 0;
+        storage_get_u8(storage, CAMPER_NVS_NS_SETTINGS, CAMPER_KEY_TEMP_GPIO, &temp_gpio);
+        err = gpio_io_build_config_from_map(pin_map, temp_gpio, cfg, count,
+                                            CAMPER_BOARD_MAX_GPIO_PINS);
+        if (err != ESP_OK || *count == 0) {
+            return err;
+        }
+        ESP_LOGI(TAG, "GPIO from pin map");
+        esp_err_t save_err = storage_save_gpio_config(storage, cfg, *count);
+        if (save_err != ESP_OK) {
+            ESP_LOGW(TAG, "GPIO blob save failed: %s", esp_err_to_name(save_err));
+        }
+        return ESP_OK;
+    }
+
+    uint8_t button_pin = 0;
+    uint8_t output_pin = 0;
+    if (storage_get_u8(storage, CAMPER_NVS_NS_SETTINGS, CAMPER_KEY_BUTTON_GPIO, &button_pin) != ESP_OK) {
+        button_pin = 0;
+    }
+    if (storage_get_u8(storage, CAMPER_NVS_NS_SETTINGS, CAMPER_KEY_OUTPUT_GPIO, &output_pin) != ESP_OK) {
+        output_pin = 0;
+    }
+    if (button_pin == 0 && output_pin == 0) {
+        err = gpio_io_build_config_from_map("", 0, cfg, count, CAMPER_BOARD_MAX_GPIO_PINS);
+        if (err == ESP_OK && *count > 0) {
+            ESP_LOGI(TAG, "GPIO default (BOOT input only)");
+            esp_err_t save_err = storage_save_gpio_config(storage, cfg, *count);
+            if (save_err != ESP_OK) {
+                ESP_LOGW(TAG, "GPIO blob save failed: %s", esp_err_to_name(save_err));
+            }
+        }
+        return err;
+    }
+
+    char map[CAMPER_IO_PIN_MAP_MAX_LEN];
+    uint8_t temp_gpio = 0;
+    storage_get_u8(storage, CAMPER_NVS_NS_SETTINGS, CAMPER_KEY_TEMP_GPIO, &temp_gpio);
+    gpio_io_migrate_legacy_to_map(output_pin, button_pin, map, sizeof(map));
+    err = gpio_io_build_config_from_map(map, temp_gpio, cfg, count, CAMPER_BOARD_MAX_GPIO_PINS);
+    if (err != ESP_OK || *count == 0) {
+        return err;
+    }
+
+    ESP_LOGI(TAG, "GPIO pins from legacy settings (button=%u output=%u)", button_pin, output_pin);
+    esp_err_t save_err = storage_save_gpio_config(storage, cfg, *count);
+    if (save_err != ESP_OK) {
+        ESP_LOGW(TAG, "GPIO blob save failed: %s", esp_err_to_name(save_err));
+    }
+    storage_set_string(storage, CAMPER_NVS_NS_SETTINGS, CAMPER_KEY_PIN_MAP, map);
+    return ESP_OK;
+}
+
 esp_err_t gpio_mgr_load_from_storage(gpio_mgr_t *mgr, storage_t *storage)
 {
     if (mgr == NULL || storage == NULL) {
@@ -268,13 +370,13 @@ esp_err_t gpio_mgr_load_from_storage(gpio_mgr_t *mgr, storage_t *storage)
 
     gpio_pin_config_t cfg[CAMPER_BOARD_MAX_GPIO_PINS];
     size_t count = 0;
-    esp_err_t err = storage_load_gpio_config(storage, cfg, &count);
+    esp_err_t err = gpio_mgr_resolve_pin_config(storage, cfg, &count);
     if (err != ESP_OK) {
         return err;
     }
 
     if (count == 0) {
-        ESP_LOGI(TAG, "no GPIO config in NVS");
+        ESP_LOGI(TAG, "no GPIO pins configured (set Taster-Pin / Relais-Pin in HA)");
         return ESP_OK;
     }
 
@@ -308,8 +410,9 @@ esp_err_t gpio_mgr_apply_config(gpio_mgr_t *mgr, const gpio_pin_config_t *cfg, s
         if (cfg[i].function == GPIO_FUNC_UNUSED) {
             continue;
         }
-        if (is_strapping_pin(cfg[i].pin)) {
-            ESP_LOGW(TAG, "skipping strapping pin %u", cfg[i].pin);
+        if (!camper_board_gpio_allowed(cfg[i].pin, (gpio_function_t)cfg[i].function)) {
+            ESP_LOGW(TAG, "skipping GPIO %u for function %u (not allowed)",
+                     cfg[i].pin, cfg[i].function);
             continue;
         }
 
@@ -349,6 +452,12 @@ esp_err_t gpio_mgr_read(gpio_mgr_t *mgr, uint8_t logical_id, bool *value)
 
     if (gpio_function_is_output((gpio_function_t)slot->cfg.function)) {
         *value = slot->output_state;
+        return ESP_OK;
+    }
+
+    if (slot->cfg.function == GPIO_FUNC_BUTTON) {
+        /* Match debounce/ISR: pressed = active level, not raw HIGH. */
+        *value = slot->last_button_level;
         return ESP_OK;
     }
 

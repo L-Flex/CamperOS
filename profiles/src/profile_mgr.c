@@ -1,57 +1,59 @@
 /**
  * @file profile_mgr.c
- * @brief Active profile loader, registry, and event forwarding.
+ * @brief Relay profile loader and event forwarding.
  */
 
 #include "profile_mgr.h"
 #include "storage.h"
 #include "event_bus.h"
 #include "event_types.h"
-#include "nvs.h"
 #include "profile_relay.h"
-#include "profile_pump.h"
-#include "profile_light.h"
-#include "profile_tank.h"
-#include "profile_climate.h"
-#include "profile_fan.h"
-#include "profile_battery.h"
-#include "profile_sensor.h"
-#include "profile_custom.h"
+#include "camper_features.h"
+#include "board_config.h"
+#include "ds18b20_svc.h"
 
+#include "esp_log.h"
 #include <stdlib.h>
 #include <string.h>
 
+#define TAG "PROFILE_MGR"
+
 struct profile_mgr {
     profile_ctx_t        ctx;
-    profile_id_t         active_id;
     const profile_ops_t *active_ops;
+    uint8_t              feature_flags;
+    uint8_t              temp_gpio;
 };
 
-static const profile_ops_t *profile_registry[PROFILE_ID_MAX];
-
-static void profile_registry_init(void)
+static void profile_mgr_reload_settings(profile_mgr_t *mgr)
 {
-    if (profile_registry[PROFILE_ID_RELAY] != NULL) {
+    if (mgr == NULL || mgr->ctx.storage == NULL) {
         return;
     }
 
-    profile_registry[PROFILE_ID_RELAY] = profile_relay_get_ops();
-    profile_registry[PROFILE_ID_PUMP] = profile_pump_get_ops();
-    profile_registry[PROFILE_ID_LIGHT] = profile_light_get_ops();
-    profile_registry[PROFILE_ID_TANK] = profile_tank_get_ops();
-    profile_registry[PROFILE_ID_CLIMATE] = profile_climate_get_ops();
-    profile_registry[PROFILE_ID_FAN] = profile_fan_get_ops();
-    profile_registry[PROFILE_ID_BATTERY] = profile_battery_get_ops();
-    profile_registry[PROFILE_ID_SENSOR] = profile_sensor_get_ops();
-    profile_registry[PROFILE_ID_CUSTOM] = profile_custom_get_ops();
+    storage_get_u8(mgr->ctx.storage, CAMPER_NVS_NS_SETTINGS, CAMPER_KEY_FEATURE_FLAGS,
+                   &mgr->feature_flags);
+    storage_get_u8(mgr->ctx.storage, CAMPER_NVS_NS_SETTINGS, CAMPER_KEY_TEMP_GPIO,
+                   &mgr->temp_gpio);
 }
 
-static const profile_ops_t *profile_lookup(profile_id_t id)
+static esp_err_t profile_mgr_start_temp_reader(profile_mgr_t *mgr)
 {
-    if (id >= PROFILE_ID_MAX) {
-        return NULL;
+    profile_mgr_reload_settings(mgr);
+
+    if ((mgr->feature_flags & CAMPER_FEATURE_TEMPERATURE) == 0) {
+        ESP_LOGI(TAG, "temperature off (flags=0x%02x)", mgr->feature_flags);
+        ds18b20_svc_stop();
+        return ESP_OK;
     }
-    return profile_registry[id];
+
+    mgr->temp_gpio = CAMPER_BOARD_TEMP_GPIO;
+    ESP_LOGI(TAG, "starting DS18B20 on GPIO %u", mgr->temp_gpio);
+    profile_ctx_t *ctx = &mgr->ctx;
+    return ds18b20_svc_start(&(ds18b20_svc_deps_t){
+        .event_bus = ctx->event_bus,
+        .logger = ctx->logger,
+    }, mgr->temp_gpio, 30);
 }
 
 profile_mgr_t *profile_mgr_create(const profile_ctx_t *base_ctx)
@@ -60,16 +62,15 @@ profile_mgr_t *profile_mgr_create(const profile_ctx_t *base_ctx)
         return NULL;
     }
 
-    profile_registry_init();
-
     profile_mgr_t *mgr = calloc(1, sizeof(profile_mgr_t));
     if (mgr == NULL) {
         return NULL;
     }
 
     mgr->ctx = *base_ctx;
-    mgr->active_id = PROFILE_ID_RELAY;
-    mgr->active_ops = profile_lookup(PROFILE_ID_RELAY);
+    mgr->active_ops = profile_relay_get_ops();
+    mgr->feature_flags = 0;
+    mgr->temp_gpio = 0;
     return mgr;
 }
 
@@ -88,28 +89,20 @@ esp_err_t profile_mgr_init(profile_mgr_t *mgr)
         return ESP_ERR_INVALID_ARG;
     }
 
-    uint8_t profile_id = PROFILE_ID_RELAY;
+    mgr->active_ops = profile_relay_get_ops();
+
+    mgr->feature_flags = 0;
+    mgr->temp_gpio = 0;
     if (mgr->ctx.storage != NULL) {
-        esp_err_t err = storage_get_active_profile(mgr->ctx.storage, &profile_id);
-        if (err != ESP_OK && err != ESP_ERR_NVS_NOT_FOUND) {
-            return err;
-        }
+        storage_set_active_profile(mgr->ctx.storage, PROFILE_ID_RELAY);
+        storage_get_u8(mgr->ctx.storage, CAMPER_NVS_NS_SETTINGS, CAMPER_KEY_FEATURE_FLAGS,
+                       &mgr->feature_flags);
+        storage_get_u8(mgr->ctx.storage, CAMPER_NVS_NS_SETTINGS, CAMPER_KEY_TEMP_GPIO,
+                       &mgr->temp_gpio);
     }
 
-    if (profile_id >= PROFILE_ID_MAX) {
-        profile_id = PROFILE_ID_RELAY;
-    }
-
-    const profile_ops_t *ops = profile_lookup((profile_id_t)profile_id);
-    if (ops == NULL) {
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    mgr->active_id = (profile_id_t)profile_id;
-    mgr->active_ops = ops;
-
-    if (ops->init != NULL) {
-        return ops->init(&mgr->ctx);
+    if (mgr->active_ops->init != NULL) {
+        return mgr->active_ops->init(&mgr->ctx);
     }
     return ESP_OK;
 }
@@ -121,9 +114,13 @@ esp_err_t profile_mgr_start(profile_mgr_t *mgr)
     }
 
     if (mgr->active_ops->start != NULL) {
-        return mgr->active_ops->start(&mgr->ctx);
+        esp_err_t err = mgr->active_ops->start(&mgr->ctx);
+        if (err != ESP_OK) {
+            return err;
+        }
     }
-    return ESP_OK;
+
+    return profile_mgr_start_temp_reader(mgr);
 }
 
 esp_err_t profile_mgr_stop(profile_mgr_t *mgr)
@@ -140,52 +137,16 @@ esp_err_t profile_mgr_stop(profile_mgr_t *mgr)
 
 profile_id_t profile_mgr_get_active_id(const profile_mgr_t *mgr)
 {
-    if (mgr == NULL) {
-        return PROFILE_ID_RELAY;
-    }
-    return mgr->active_id;
+    (void)mgr;
+    return PROFILE_ID_RELAY;
 }
 
 const char *profile_mgr_get_active_name(const profile_mgr_t *mgr)
 {
     if (mgr == NULL || mgr->active_ops == NULL) {
-        return "unknown";
+        return "relay";
     }
     return mgr->active_ops->name;
-}
-
-esp_err_t profile_mgr_set_profile(profile_mgr_t *mgr, profile_id_t id)
-{
-    if (mgr == NULL || id >= PROFILE_ID_MAX) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    const profile_ops_t *ops = profile_lookup(id);
-    if (ops == NULL) {
-        return ESP_ERR_NOT_FOUND;
-    }
-
-    if (mgr->ctx.storage != NULL) {
-        esp_err_t err = storage_set_active_profile(mgr->ctx.storage, (uint8_t)id);
-        if (err != ESP_OK) {
-            return err;
-        }
-    }
-
-    mgr->active_id = id;
-    mgr->active_ops = ops;
-
-    if (mgr->ctx.event_bus != NULL) {
-        event_t evt = {
-            .type = EVT_PROFILE_CHANGED,
-            .source_id = 0x0301,
-            .gpio_id = EVENT_GPIO_NONE,
-            .data.int_val = (int32_t)id,
-        };
-        event_bus_publish(mgr->ctx.event_bus, &evt);
-    }
-
-    return ESP_OK;
 }
 
 esp_err_t profile_mgr_on_event(profile_mgr_t *mgr, const event_t *evt)
@@ -218,4 +179,55 @@ profile_ctx_t *profile_mgr_get_ctx(profile_mgr_t *mgr)
         return NULL;
     }
     return &mgr->ctx;
+}
+
+uint8_t profile_mgr_get_feature_flags(const profile_mgr_t *mgr)
+{
+    if (mgr == NULL) {
+        return 0;
+    }
+    return mgr->feature_flags;
+}
+
+uint8_t profile_mgr_get_temp_gpio(const profile_mgr_t *mgr)
+{
+    if (mgr == NULL) {
+        return 0;
+    }
+    return mgr->temp_gpio;
+}
+
+bool profile_mgr_temperature_enabled(const profile_mgr_t *mgr)
+{
+    if (mgr == NULL) {
+        return false;
+    }
+    return (mgr->feature_flags & CAMPER_FEATURE_TEMPERATURE) != 0;
+}
+
+uint8_t profile_mgr_get_temp_endpoint(const profile_mgr_t *mgr)
+{
+    (void)mgr;
+    return CAMPER_ZB_TEMP_ENDPOINT_COMBO;
+}
+
+esp_err_t profile_mgr_apply_temp_gpio(profile_mgr_t *mgr, uint8_t pin)
+{
+    (void)pin;
+    if (mgr == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    mgr->temp_gpio = CAMPER_BOARD_TEMP_GPIO;
+    return profile_mgr_start_temp_reader(mgr);
+}
+
+esp_err_t profile_mgr_apply_feature_flags(profile_mgr_t *mgr, uint8_t flags)
+{
+    if (mgr == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    mgr->feature_flags = flags;
+    return profile_mgr_start_temp_reader(mgr);
 }
