@@ -32,8 +32,12 @@ extern "C" {
 /** Maximum Zigbee endpoints per node */
 #define CAMPER_ZIGBEE_MAX_ENDPOINTS   8
 
-/** CamperNode manufacturer-specific Zigbee cluster ID */
-#define CAMPER_ZIGBEE_CLUSTER_ID      0xFC00
+/**
+ * CamperNode custom ZCL cluster ID (endpoint 10).
+ * Must be in 0x8000..0xFBFF (ZBOSS custom, non-manufacturer-specific).
+ * Do not use 0xFC00 (Tunnel) or >= 0xFC00 (manufacturer-specific range).
+ */
+#define CAMPER_ZIGBEE_CLUSTER_ID      0xFB00
 
 #ifdef __cplusplus
 }

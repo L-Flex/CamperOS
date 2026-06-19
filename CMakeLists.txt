@@ -12,6 +12,7 @@ set(EXTRA_COMPONENT_DIRS
     "logger"
     "watchdog"
     "profiles"
+    "sensors"
 )
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
