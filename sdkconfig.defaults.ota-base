@@ -1,0 +1,3 @@
+# OTA base: flash once via USB, then OTA to full firmware (0.2.0+ with MOSFET :Od).
+# Usage: copy to sdkconfig.defaults before first build, or menuconfig → CamperNode OS.
+CONFIG_CAMPER_OTA_BASE_FIRMWARE=y

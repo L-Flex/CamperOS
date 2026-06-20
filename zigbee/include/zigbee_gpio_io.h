@@ -44,6 +44,8 @@ uint16_t zigbee_gpio_io_get_output_state(void);
 
 void zigbee_gpio_io_notify_temp_gpio(uint8_t pin);
 
+void zigbee_gpio_io_on_network_joined(void);
+
 void zigbee_gpio_io_get_attr_ptrs(uint8_t **pin_map, uint16_t **output_state, uint16_t **input_state);
 
 

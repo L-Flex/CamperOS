@@ -27,10 +27,11 @@ typedef enum {
     /** Simple setup: GPIO pin numbers (0 = disabled). Builds gpio_config blob. */
     ZB_ATTR_BUTTON_GPIO      = 0x0008,
     ZB_ATTR_OUTPUT_GPIO      = 0x0009,
-    /** Bitmask: CAMPER_FEATURE_TEMPERATURE (0x01). */
+    /** Bitmask: legacy; derived from sensor_gpio6/7. */
     ZB_ATTR_FEATURE_FLAGS    = 0x000A,
+    /** Active DS18B20 pin (read-only: 0, 6, or 7). */
     ZB_ATTR_TEMP_GPIO        = 0x000B,
-    /** Per-pin I/O map: "3:O,7:O,10:I". Set once; reboot after change. GPIO9 always input. */
+    /** Per-pin I/O map: "3:O,10:I". Set once; reboot after change. GPIO9 always input. */
     ZB_ATTR_PIN_MAP           = 0x000C,
     /** @deprecated — use ZB_ATTR_PIN_MAP */
     ZB_ATTR_OUTPUT_PIN_LIST   = 0x000C,
@@ -39,7 +40,18 @@ typedef enum {
     ZB_ATTR_OUTPUT_STATE     = 0x000E,
     /** Input bitmap — bit0 = BOOT/GPIO9, read-only, reported on change. */
     ZB_ATTR_INPUT_STATE      = 0x000F,
+    /** GPIO 6: 0=off, 1=DS18B20, 2=DHT22. */
+    ZB_ATTR_SENSOR_GPIO6     = 0x0010,
+    /** GPIO 7: 0=off, 1=DS18B20, 2=DHT22. */
+    ZB_ATTR_SENSOR_GPIO7     = 0x0011,
+    /** Active DHT22 pin (read-only: 0, 6, or 7). */
+    ZB_ATTR_DHT_GPIO         = 0x0012,
 } zigbee_camper_attr_t;
+
+/** @deprecated — same attribute id as ZB_ATTR_SENSOR_GPIO6 (0x0010). */
+#define ZB_ATTR_SENSOR_TYPE   ZB_ATTR_SENSOR_GPIO6
+/** @deprecated — same attribute id as ZB_ATTR_SENSOR_GPIO6 (0x0010). */
+#define ZB_ATTR_DHT_ACTIVE    ZB_ATTR_SENSOR_GPIO6
 
 typedef enum {
     ZB_CMD_REBOOT         = 0x00,

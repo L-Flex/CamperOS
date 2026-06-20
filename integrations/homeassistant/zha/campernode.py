@@ -81,7 +81,7 @@ def parse_pin_map(map_str: str) -> tuple[list[int], list[int]]:
         except ValueError:
             continue
         role_u = role.strip().upper()
-        if role_u == "O":
+        if role_u in {"O", "OD", "OM"}:
             outputs.append(pin)
         elif role_u == "I":
             inputs.append(pin)
@@ -181,6 +181,9 @@ class CamperNodeCluster(CustomCluster):
         feature_flags: Final = ZCLAttributeDef(id=0x000A, type=t.uint8_t, access="rw")
         temp_gpio: Final = ZCLAttributeDef(id=0x000B, type=t.uint8_t, access="r")
         pin_map: Final = ZCLAttributeDef(id=0x000C, type=t.CharacterString, access="rw")
+        sensor_gpio6: Final = ZCLAttributeDef(id=0x0010, type=t.uint8_t, access="rw")
+        sensor_gpio7: Final = ZCLAttributeDef(id=0x0011, type=t.uint8_t, access="rw")
+        dht_gpio: Final = ZCLAttributeDef(id=0x0012, type=t.uint8_t, access="r")
         output_state: Final = ZCLAttributeDef(id=0x000E, type=t.uint16_t, access="rw")
         input_state: Final = ZCLAttributeDef(id=0x000F, type=t.uint16_t, access="r")
 
@@ -398,14 +401,26 @@ def _config_cluster_entities(builder: QuirkBuilder) -> QuirkBuilder:
         )
         # GPIO-Karte: use custom integration campernode_config (text entity per device).
         # See integrations/homeassistant/campernode_config/
-        .switch(
-            attribute_name=CamperNodeCluster.AttributeDefs.feature_flags.name,
+        .number(
+            attribute_name=CamperNodeCluster.AttributeDefs.sensor_gpio6.name,
             cluster_id=CAMPER_CLUSTER_ID,
             endpoint_id=CONFIG_ENDPOINT,
-            on_value=1,
-            off_value=0,
-            translation_key="temperature_active",
-            fallback_name="Temperatur aktiv",
+            min_value=0,
+            max_value=2,
+            step=1,
+            translation_key="sensor_gpio6",
+            fallback_name="GPIO 6 sensor",
+            entity_type=EntityType.CONFIG,
+        )
+        .number(
+            attribute_name=CamperNodeCluster.AttributeDefs.sensor_gpio7.name,
+            cluster_id=CAMPER_CLUSTER_ID,
+            endpoint_id=CONFIG_ENDPOINT,
+            min_value=0,
+            max_value=2,
+            step=1,
+            translation_key="sensor_gpio7",
+            fallback_name="GPIO 7 sensor",
             entity_type=EntityType.CONFIG,
         )
         .number(

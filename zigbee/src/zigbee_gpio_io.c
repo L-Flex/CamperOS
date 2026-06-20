@@ -38,7 +38,11 @@
 
 #include "esp_zigbee_core.h"
 
-#include "zcl/esp_zigbee_zcl_common.h"
+#include "zcl/esp_zigbee_zcl_command.h"
+
+#include "zcl/esp_zigbee_zcl_core.h"
+
+#include "zdo/esp_zigbee_zdo_command.h"
 
 
 
@@ -51,6 +55,10 @@
 #define TAG "ZB_IO"
 
 #define ZB_PIN_MAP_BUF_SIZE  CAMPER_IO_PIN_MAP_MAX_LEN
+
+#define ZB_COORDINATOR_SHORT_ADDR  0x0000U
+
+#define ZB_COORDINATOR_ENDPOINT    1U
 
 
 
@@ -76,7 +84,17 @@ static struct {
 
     bool         ready;
 
+    uint16_t     last_reported_input;
+
+    bool         input_poll_active;
+
+    bool         input_reporting_ready;
+
 } s_io;
+
+
+
+#define ZB_IO_INPUT_POLL_MS  100U
 
 
 
@@ -249,7 +267,7 @@ static esp_err_t zb_io_build_and_apply_gpio(void)
 
     if (map[0] != '\0' &&
 
-        gpio_io_parse_pin_map(map, s_io.temp_gpio, out_pins, &out_n, in_pins, &in_n) < 0) {
+        gpio_io_parse_pin_map(map, s_io.temp_gpio, out_pins, &out_n, in_pins, &in_n, NULL) < 0) {
 
         return ESP_ERR_INVALID_ARG;
 
@@ -347,8 +365,147 @@ static void zb_io_refresh_input_state(void)
 
 
 
+static esp_zb_zcl_attr_location_info_t zb_io_input_attr_loc(void)
+{
+    return (esp_zb_zcl_attr_location_info_t){
+        .endpoint_id = CAMPER_ZB_CONFIG_ENDPOINT,
+        .cluster_id = CAMPER_ZIGBEE_CLUSTER_ID,
+        .cluster_role = ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
+        .manuf_code = ESP_ZB_ZCL_ATTR_NON_MANUFACTURER_SPECIFIC,
+        .attr_id = ZB_ATTR_INPUT_STATE,
+    };
+}
+
+static esp_err_t zb_io_enable_input_reporting(void)
+{
+    if (s_io.input_reporting_ready) {
+        return ESP_OK;
+    }
+
+    esp_zb_zcl_reporting_info_t report = {0};
+    report.direction = ESP_ZB_ZCL_REPORT_DIRECTION_SEND;
+    report.ep = CAMPER_ZB_CONFIG_ENDPOINT;
+    report.cluster_id = CAMPER_ZIGBEE_CLUSTER_ID;
+    report.cluster_role = ESP_ZB_ZCL_CLUSTER_SERVER_ROLE;
+    report.attr_id = ZB_ATTR_INPUT_STATE;
+    report.manuf_code = ESP_ZB_ZCL_ATTR_NON_MANUFACTURER_SPECIFIC;
+    report.u.send_info.min_interval = 0;
+    report.u.send_info.max_interval = 3600;
+    report.u.send_info.def_min_interval = 0;
+    report.u.send_info.def_max_interval = 3600;
+    report.u.send_info.delta.u16 = 1;
+    report.dst.short_addr = ZB_COORDINATOR_SHORT_ADDR;
+    report.dst.endpoint = ZB_COORDINATOR_ENDPOINT;
+    report.dst.profile_id = ESP_ZB_AF_HA_PROFILE_ID;
+
+    esp_err_t err = esp_zb_zcl_update_reporting_info(&report);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "input reporting config failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = esp_zb_zcl_start_attr_reporting(zb_io_input_attr_loc());
+    if (err == ESP_OK) {
+        s_io.input_reporting_ready = true;
+        ESP_LOGI(TAG, "input_state reporting enabled");
+    } else {
+        ESP_LOGW(TAG, "input reporting start failed: %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
+static void zb_io_bind_camper_cluster_cb(esp_zb_zdp_status_t zdo_status, void *user_ctx)
+{
+    (void)user_ctx;
+    if (zdo_status == ESP_ZB_ZDP_STATUS_SUCCESS) {
+        ESP_LOGI(TAG, "camper cluster bound to coordinator");
+    } else {
+        ESP_LOGW(TAG, "camper cluster bind status %d (using direct reports)", zdo_status);
+    }
+    if (esp_zb_lock_acquire(portMAX_DELAY)) {
+        zb_io_enable_input_reporting();
+        esp_zb_lock_release();
+    }
+}
+
+static void zb_io_bind_camper_cluster(void)
+{
+    esp_zb_ieee_addr_t coord_ieee;
+    if (esp_zb_ieee_address_by_short(ZB_COORDINATOR_SHORT_ADDR, coord_ieee) != ESP_OK) {
+        ESP_LOGW(TAG, "coordinator ieee lookup failed — direct input reports only");
+        if (esp_zb_lock_acquire(portMAX_DELAY)) {
+            zb_io_enable_input_reporting();
+            esp_zb_lock_release();
+        }
+        return;
+    }
+
+    esp_zb_zdo_bind_req_param_t bind_req = {0};
+    esp_zb_get_long_address(bind_req.src_address);
+    bind_req.src_endp = CAMPER_ZB_CONFIG_ENDPOINT;
+    bind_req.cluster_id = CAMPER_ZIGBEE_CLUSTER_ID;
+    bind_req.dst_addr_mode = ESP_ZB_ZDO_BIND_DST_ADDR_MODE_64_BIT_EXTENDED;
+    memcpy(bind_req.dst_address_u.addr_long, coord_ieee, sizeof(esp_zb_ieee_addr_t));
+    bind_req.dst_endp = ZB_COORDINATOR_ENDPOINT;
+    bind_req.req_dst_addr = ZB_COORDINATOR_SHORT_ADDR;
+
+    esp_zb_zdo_device_bind_req(&bind_req, zb_io_bind_camper_cluster_cb, NULL);
+    ESP_LOGI(TAG, "binding camper cluster ep %u to coordinator", CAMPER_ZB_CONFIG_ENDPOINT);
+}
+
+static esp_err_t zb_io_report_input_state(uint16_t value)
+{
+    if (!zigbee_device_is_joined()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (!esp_zb_lock_acquire(portMAX_DELAY)) {
+        return ESP_FAIL;
+    }
+
+    esp_zb_zcl_status_t st = esp_zb_zcl_set_attribute_val(
+        CAMPER_ZB_CONFIG_ENDPOINT,
+        CAMPER_ZIGBEE_CLUSTER_ID,
+        ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
+        ZB_ATTR_INPUT_STATE,
+        (void *)&value,
+        false);
+
+    esp_err_t ret = ESP_FAIL;
+    if (st == ESP_ZB_ZCL_STATUS_SUCCESS) {
+        if (!s_io.input_reporting_ready) {
+            zb_io_enable_input_reporting();
+        }
+        ret = esp_zb_zcl_start_attr_reporting(zb_io_input_attr_loc());
+        if (ret != ESP_OK) {
+            esp_zb_zcl_report_attr_cmd_t cmd = {0};
+            cmd.zcl_basic_cmd.src_endpoint = CAMPER_ZB_CONFIG_ENDPOINT;
+            cmd.zcl_basic_cmd.dst_endpoint = ZB_COORDINATOR_ENDPOINT;
+            cmd.zcl_basic_cmd.dst_addr_u.addr_short = ZB_COORDINATOR_SHORT_ADDR;
+            cmd.address_mode = ESP_ZB_APS_ADDR_MODE_16_ENDP_PRESENT;
+            cmd.clusterID = CAMPER_ZIGBEE_CLUSTER_ID;
+            cmd.direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_CLI;
+            cmd.dis_default_resp = 1;
+            cmd.attributeID = ZB_ATTR_INPUT_STATE;
+            ret = esp_zb_zcl_report_attr_cmd_req(&cmd);
+        }
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "input report failed: %s", esp_err_to_name(ret));
+        }
+    } else {
+        ESP_LOGW(TAG, "input_state set failed: %d", (int)st);
+    }
+
+    esp_zb_lock_release();
+    return ret;
+}
+
 static esp_err_t zb_io_report_attr_u16(uint16_t attr_id, uint16_t value)
 {
+    if (!zigbee_device_is_joined()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
     if (!esp_zb_lock_acquire(portMAX_DELAY)) {
         return ESP_FAIL;
     }
@@ -361,8 +518,57 @@ static esp_err_t zb_io_report_attr_u16(uint16_t attr_id, uint16_t value)
         (void *)&value,
         false);
 
+    esp_err_t ret = ESP_FAIL;
+    if (st == ESP_ZB_ZCL_STATUS_SUCCESS) {
+        esp_zb_zcl_report_attr_cmd_t cmd = {0};
+        cmd.zcl_basic_cmd.src_endpoint = CAMPER_ZB_CONFIG_ENDPOINT;
+        cmd.address_mode = ESP_ZB_APS_ADDR_MODE_DST_ADDR_ENDP_NOT_PRESENT;
+        cmd.clusterID = CAMPER_ZIGBEE_CLUSTER_ID;
+        cmd.manuf_specific = 0;
+        cmd.direction = ESP_ZB_ZCL_CMD_DIRECTION_TO_CLI;
+        cmd.dis_default_resp = 1;
+        cmd.manuf_code = 0;
+        cmd.attributeID = attr_id;
+        ret = esp_zb_zcl_report_attr_cmd_req(&cmd);
+        if (ret != ESP_OK) {
+            ESP_LOGW(TAG, "report attr 0x%04x failed: %s", attr_id, esp_err_to_name(ret));
+        }
+    } else {
+        ESP_LOGW(TAG, "set attr 0x%04x failed: %d", attr_id, (int)st);
+    }
+
     esp_zb_lock_release();
-    return (st == ESP_ZB_ZCL_STATUS_SUCCESS) ? ESP_OK : ESP_FAIL;
+    return ret;
+}
+
+
+
+static void zb_io_report_input_if_changed(void)
+{
+    zb_io_refresh_input_state();
+    if (s_io.input_state == s_io.last_reported_input) {
+        return;
+    }
+
+    s_io.last_reported_input = s_io.input_state;
+    esp_err_t err = zb_io_report_input_state(s_io.input_state);
+    ESP_LOGI(TAG, "input state 0x%04x -> HA (%s)",
+             s_io.input_state, esp_err_to_name(err));
+}
+
+
+
+static void zb_io_input_poll_cb(uint8_t param)
+{
+    (void)param;
+
+    if (s_io.ready && s_io.input_count > 0 && zigbee_device_is_joined()) {
+        zb_io_report_input_if_changed();
+    }
+
+    if (s_io.input_poll_active) {
+        esp_zb_scheduler_alarm((esp_zb_callback_t)zb_io_input_poll_cb, 0, ZB_IO_INPUT_POLL_MS);
+    }
 }
 
 
@@ -403,17 +609,7 @@ static void zb_io_input_event_handler(const event_t *evt, void *arg)
 
 
 
-    zb_io_refresh_input_state();
-
-    if (zb_io_report_attr_u16(ZB_ATTR_INPUT_STATE, s_io.input_state) == ESP_OK) {
-
-        ESP_LOGI(TAG, "input state 0x%02x (bind %u %s)",
-
-                 s_io.input_state, evt->gpio_id,
-
-                 evt->type == EVT_BUTTON_PRESSED ? "active" : "released");
-
-    }
+    zb_io_report_input_if_changed();
 
 }
 
@@ -585,6 +781,42 @@ void zigbee_gpio_io_init(const zigbee_camper_deps_t *deps)
 
 
 
+static void zb_io_joined_setup_cb(uint8_t param)
+{
+    (void)param;
+    zb_io_bind_camper_cluster();
+}
+
+void zigbee_gpio_io_on_network_joined(void)
+
+{
+
+    if (s_io.input_count == 0) {
+
+        return;
+
+    }
+
+    esp_zb_scheduler_alarm((esp_zb_callback_t)zb_io_joined_setup_cb, 0, 1000);
+
+    if (s_io.input_poll_active) {
+
+        return;
+
+    }
+
+    s_io.last_reported_input = s_io.input_state;
+
+    s_io.input_poll_active = true;
+
+    esp_zb_scheduler_alarm((esp_zb_callback_t)zb_io_input_poll_cb, 0, ZB_IO_INPUT_POLL_MS);
+
+    ESP_LOGI(TAG, "input polling started (%u ms)", (unsigned)ZB_IO_INPUT_POLL_MS);
+
+}
+
+
+
 void zigbee_gpio_io_notify_temp_gpio(uint8_t pin)
 
 {
@@ -629,7 +861,7 @@ esp_err_t zigbee_gpio_io_handle_attr_write(uint16_t attr_id, const uint8_t *valu
 
         if (map[0] != '\0' &&
 
-            gpio_io_parse_pin_map(map, s_io.temp_gpio, NULL, NULL, NULL, NULL) < 0) {
+            gpio_io_parse_pin_map(map, s_io.temp_gpio, NULL, NULL, NULL, NULL, NULL) < 0) {
 
             return ESP_ERR_INVALID_ARG;
 

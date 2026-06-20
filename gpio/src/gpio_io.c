@@ -14,6 +14,10 @@
 
 #include "board_gpio.h"
 
+#include "camper_config.h"
+
+#include "sdkconfig.h"
+
 
 
 #include <ctype.h>
@@ -46,6 +50,19 @@ static bool gpio_io_contains_pin(const uint8_t *pins, size_t count, uint8_t pin)
 
 
 
+static bool gpio_io_is_console_uart_pin(uint8_t pin)
+{
+#if defined(CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG) && CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+    (void)pin;
+    return false;
+#elif defined(CONFIG_ESP_CONSOLE_NONE) && CONFIG_ESP_CONSOLE_NONE
+    (void)pin;
+    return false;
+#else
+    return pin == CAMPER_BOARD_CONSOLE_TX_GPIO || pin == CAMPER_BOARD_CONSOLE_RX_GPIO;
+#endif
+}
+
 bool gpio_io_is_pin_reserved(uint8_t pin, uint8_t temp_gpio)
 
 {
@@ -72,15 +89,31 @@ bool gpio_io_is_pin_reserved(uint8_t pin, uint8_t temp_gpio)
 
 #endif
 
-#if CAMPER_BOARD_TEMP_GPIO < CAMPER_BOARD_MAX_GPIO_PINS
+#if CAMPER_BOARD_SENSOR_GPIO_6 < CAMPER_BOARD_MAX_GPIO_PINS
 
-    if (pin == CAMPER_BOARD_TEMP_GPIO) {
+    if (pin == CAMPER_BOARD_SENSOR_GPIO_6) {
 
         return true;
 
     }
 
 #endif
+
+#if CAMPER_BOARD_SENSOR_GPIO_7 < CAMPER_BOARD_MAX_GPIO_PINS
+
+    if (pin == CAMPER_BOARD_SENSOR_GPIO_7) {
+
+        return true;
+
+    }
+
+#endif
+
+    if (gpio_io_is_console_uart_pin(pin)) {
+
+        return true;
+
+    }
 
     (void)temp_gpio;
 
@@ -108,7 +141,9 @@ int gpio_io_parse_pin_map(const char *map, uint8_t temp_gpio,
 
                           uint8_t *out_pins, size_t *out_count,
 
-                          uint8_t *in_pins, size_t *in_count)
+                          uint8_t *in_pins, size_t *in_count,
+
+                          uint8_t *out_flags)
 
 {
 
@@ -116,9 +151,13 @@ int gpio_io_parse_pin_map(const char *map, uint8_t temp_gpio,
 
     uint8_t in_buf[CAMPER_IO_MAX_INPUTS];
 
+    uint8_t flag_buf[CAMPER_IO_MAX_OUTPUTS];
+
     uint8_t *outs = (out_pins != NULL) ? out_pins : out_buf;
 
     uint8_t *ins = (in_pins != NULL) ? in_pins : in_buf;
+
+    uint8_t *flags = (out_flags != NULL) ? out_flags : flag_buf;
 
     size_t out_local = 0;
 
@@ -180,9 +219,50 @@ int gpio_io_parse_pin_map(const char *map, uint8_t temp_gpio,
 
 
 
-        char role = (char)toupper((unsigned char)end[1]);
+        const char *role = end + 1;
 
-        if (role != 'O' && role != 'I') {
+        bool is_output = false;
+
+        uint8_t pin_flags = GPIO_FLAG_NONE;
+
+
+
+        if (role[0] == 'O' || role[0] == 'o') {
+
+            is_output = true;
+
+#if CAMPER_FEATURE_MOSFET_OD
+            if ((role[1] == 'd' || role[1] == 'D' || role[1] == 'm' || role[1] == 'M') &&
+
+                (role[2] == '\0' || role[2] == ',' || role[2] == ' ')) {
+
+                pin_flags = GPIO_FLAG_OPEN_DRAIN;
+
+                p = end + 3;
+
+            } else
+#endif
+            if (role[1] == '\0' || role[1] == ',' || role[1] == ' ') {
+
+                p = end + 2;
+
+            } else {
+
+                return -1;
+
+            }
+
+        } else if (role[0] == 'I' || role[0] == 'i') {
+
+            if (role[1] != '\0' && role[1] != ',' && role[1] != ' ') {
+
+                return -1;
+
+            }
+
+            p = end + 2;
+
+        } else {
 
             return -1;
 
@@ -199,8 +279,6 @@ int gpio_io_parse_pin_map(const char *map, uint8_t temp_gpio,
         }
 
 
-
-        bool is_output = (role == 'O');
 
         if (!gpio_io_role_allowed(pin, is_output)) {
 
@@ -236,7 +314,11 @@ int gpio_io_parse_pin_map(const char *map, uint8_t temp_gpio,
 
         dest[(*n)++] = pin;
 
-        p = end + 2;
+        if (is_output) {
+
+            flags[*out_n - 1U] = pin_flags;
+
+        }
 
     }
 
@@ -251,6 +333,8 @@ int gpio_io_parse_pin_map(const char *map, uint8_t temp_gpio,
 static esp_err_t gpio_io_build_config(const uint8_t *output_pins, size_t output_count,
 
                                       const uint8_t *input_pins, size_t input_count,
+
+                                      const uint8_t *output_flags,
 
                                       gpio_pin_config_t *cfg, size_t *count, size_t cfg_max)
 
@@ -298,7 +382,7 @@ static esp_err_t gpio_io_build_config(const uint8_t *output_pins, size_t output_
 
             .function = GPIO_FUNC_RELAY,
 
-            .flags = GPIO_FLAG_NONE,
+            .flags = (output_flags != NULL) ? output_flags[i] : GPIO_FLAG_NONE,
 
             .profile_bind = (uint8_t)(i + 1U),
 
@@ -388,6 +472,8 @@ esp_err_t gpio_io_build_config_from_map(const char *map, uint8_t temp_gpio,
 
     uint8_t out_pins[CAMPER_IO_MAX_OUTPUTS];
 
+    uint8_t out_flags[CAMPER_IO_MAX_OUTPUTS];
+
     uint8_t in_pins[CAMPER_IO_MAX_INPUTS];
 
     size_t out_n = 0;
@@ -396,7 +482,7 @@ esp_err_t gpio_io_build_config_from_map(const char *map, uint8_t temp_gpio,
 
 
 
-    if (gpio_io_parse_pin_map(map, temp_gpio, out_pins, &out_n, in_pins, &in_n) < 0) {
+    if (gpio_io_parse_pin_map(map, temp_gpio, out_pins, &out_n, in_pins, &in_n, out_flags) < 0) {
 
         return ESP_ERR_INVALID_ARG;
 
@@ -404,7 +490,7 @@ esp_err_t gpio_io_build_config_from_map(const char *map, uint8_t temp_gpio,
 
 
 
-    return gpio_io_build_config(out_pins, out_n, in_pins, in_n, cfg, count, cfg_max);
+    return gpio_io_build_config(out_pins, out_n, in_pins, in_n, out_flags, cfg, count, cfg_max);
 
 }
 
@@ -654,7 +740,7 @@ esp_err_t gpio_io_pin_map_upsert(char *map, size_t cap, uint8_t pin, bool is_out
 
     if (map[0] != '\0' &&
 
-        gpio_io_parse_pin_map(map, temp_gpio, out_pins, &out_n, in_pins, &in_n) < 0) {
+        gpio_io_parse_pin_map(map, temp_gpio, out_pins, &out_n, in_pins, &in_n, NULL) < 0) {
 
         return ESP_ERR_INVALID_ARG;
 

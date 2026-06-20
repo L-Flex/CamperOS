@@ -32,8 +32,16 @@ extern "C" {
 /** Onboard WS2812 RGB LED (ESP32-C6-DevKitC-1: GPIO 8). Set to 255 to disable. */
 #define CAMPER_BOARD_STATUS_LED_GPIO        8U
 
-/** Fixed DS18B20 one-wire data pin (not part of GPIO-Karte). */
-#define CAMPER_BOARD_TEMP_GPIO              6U
+/** Optional sensor data pins (not part of GPIO-Karte). */
+#define CAMPER_BOARD_SENSOR_GPIO_6          6U
+#define CAMPER_BOARD_SENSOR_GPIO_7          7U
+/** @deprecated aliases */
+#define CAMPER_BOARD_SENSOR_GPIO            CAMPER_BOARD_SENSOR_GPIO_6
+#define CAMPER_BOARD_TEMP_GPIO              CAMPER_BOARD_SENSOR_GPIO_6
+
+/** ESP32-C6 DevKit UART0 console (idf.py monitor) — do not use in GPIO-Karte. */
+#define CAMPER_BOARD_CONSOLE_TX_GPIO        16U
+#define CAMPER_BOARD_CONSOLE_RX_GPIO        17U
 
 /** 1 = LED is active-low (an to GND), 0 = active-high */
 #define CAMPER_BOARD_STATUS_LED_ACTIVE_LOW  0

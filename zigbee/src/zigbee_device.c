@@ -5,11 +5,12 @@
 
 #include "zigbee_device.h"
 #include "zigbee_camper_cluster.h"
+#include "zigbee_gpio_io.h"
 #include "zigbee_clusters.h"
+#include "zigbee_ota.h"
 #include "zigbee_platform_cfg.h"
 #include "profile_mgr.h"
 #include "profile_interface.h"
-#include "zigbee_gpio_io.h"
 #include "profile_relay.h"
 #include "camper_features.h"
 #include "status_led.h"
@@ -51,12 +52,28 @@ static uint8_t s_pending_temp_ep;
 static float s_pending_temp_c;
 static uint8_t s_temp_bind_ep;
 
+static bool s_dht_ready;
+static float s_last_dht_temp_c;
+static float s_last_dht_hum_pct;
+static bool s_last_dht_valid;
+static uint8_t s_pending_dht_ep;
+static float s_pending_dht_temp_c;
+static float s_pending_dht_hum_pct;
+static uint8_t s_dht_bind_ep;
+static uint8_t s_dht_bind_step;
+
 static void zb_temp_report_alarm_cb(uint8_t param);
+static void zb_dht_report_alarm_cb(uint8_t param);
 static void zb_temp_cluster_setup_cb(uint8_t param);
+static void zb_dht_cluster_setup_cb(uint8_t param);
 static void zb_on_network_joined(void);
 static void zb_schedule_temp_report(uint8_t endpoint, float temp_c);
+static void zb_schedule_dht_report(uint8_t endpoint, float temp_c, float hum_pct);
 static esp_err_t zb_enable_temp_reporting(uint8_t endpoint);
+static esp_err_t zb_enable_humidity_reporting(uint8_t endpoint);
 static void zb_bind_temp_cluster(uint8_t endpoint);
+static void zb_bind_dht_clusters(uint8_t endpoint);
+static esp_err_t zb_add_dht_endpoint(esp_zb_ep_list_t *ep_list, uint8_t endpoint);
 static void zb_register_identify_handlers(profile_mgr_t *profile_mgr);
 static void zb_identify_notify_cb(uint8_t identify_on);
 
@@ -150,6 +167,11 @@ static void zb_register_identify_handlers(profile_mgr_t *profile_mgr)
     if (profile_mgr != NULL && profile_mgr_temperature_enabled(profile_mgr)) {
         esp_zb_identify_notify_handler_register(
             profile_mgr_get_temp_endpoint(profile_mgr), zb_identify_notify_cb);
+    }
+
+    if (profile_mgr != NULL && profile_mgr_dht_enabled(profile_mgr)) {
+        esp_zb_identify_notify_handler_register(
+            profile_mgr_get_dht_endpoint(profile_mgr), zb_identify_notify_cb);
     }
 }
 
@@ -267,6 +289,194 @@ static void zb_temp_cluster_setup_cb(uint8_t param)
     zb_bind_temp_cluster(profile_mgr_get_temp_endpoint(s_profile_mgr));
 }
 
+static void zb_dht_temp_handler(const event_t *evt, void *arg)
+{
+    (void)arg;
+    if (evt == NULL || s_profile_mgr == NULL || evt->type != EVT_DHT_TEMPERATURE_UPDATE) {
+        return;
+    }
+    if (!profile_mgr_dht_enabled(s_profile_mgr)) {
+        return;
+    }
+
+    s_last_dht_temp_c = evt->data.float_val;
+
+    if (!s_joined) {
+        ESP_LOGI(TAG, "DHT temp %.2f C cached (waiting for network)", evt->data.float_val);
+    }
+}
+
+static void zb_dht_humidity_handler(const event_t *evt, void *arg)
+{
+    (void)arg;
+    if (evt == NULL || s_profile_mgr == NULL || evt->type != EVT_HUMIDITY_UPDATE) {
+        return;
+    }
+    if (!profile_mgr_dht_enabled(s_profile_mgr)) {
+        return;
+    }
+
+    s_last_dht_hum_pct = evt->data.float_val;
+    s_last_dht_valid = true;
+
+    if (!s_joined) {
+        ESP_LOGI(TAG, "DHT humidity %.1f %% cached (waiting for network)", evt->data.float_val);
+        return;
+    }
+
+    zb_schedule_dht_report(profile_mgr_get_dht_endpoint(s_profile_mgr),
+                           s_last_dht_temp_c, evt->data.float_val);
+}
+
+static void zb_dht_report_alarm_cb(uint8_t param)
+{
+    (void)param;
+    if (!s_joined || s_profile_mgr == NULL || !profile_mgr_dht_enabled(s_profile_mgr)) {
+        return;
+    }
+    zigbee_device_report_temperature(s_pending_dht_ep, s_pending_dht_temp_c);
+    zigbee_device_report_humidity(s_pending_dht_ep, s_pending_dht_hum_pct);
+}
+
+static void zb_schedule_dht_report(uint8_t endpoint, float temp_c, float hum_pct)
+{
+    s_pending_dht_ep = endpoint;
+    s_pending_dht_temp_c = temp_c;
+    s_pending_dht_hum_pct = hum_pct;
+    esp_zb_scheduler_alarm((esp_zb_callback_t)zb_dht_report_alarm_cb, 0, 0);
+}
+
+static void zb_dht_report_ready(uint8_t endpoint)
+{
+    s_dht_ready = true;
+
+    if (esp_zb_lock_acquire(portMAX_DELAY)) {
+        zb_enable_temp_reporting(endpoint);
+        zb_enable_humidity_reporting(endpoint);
+        esp_zb_lock_release();
+    }
+
+    if (s_last_dht_valid) {
+        zb_schedule_dht_report(endpoint, s_last_dht_temp_c, s_last_dht_hum_pct);
+    }
+}
+
+static void zb_bind_dht_cluster_cb(esp_zb_zdp_status_t zdo_status, void *user_ctx)
+{
+    (void)user_ctx;
+
+    if (zdo_status == ESP_ZB_ZDP_STATUS_SUCCESS ||
+        zdo_status == ESP_ZB_ZDP_STATUS_NOT_SUPPORTED ||
+        zdo_status == ESP_ZB_ZDP_STATUS_TIMEOUT) {
+        if (s_dht_bind_step == 0) {
+            s_dht_bind_step = 1;
+            esp_zb_zdo_bind_req_param_t bind_req = {0};
+            esp_zb_ieee_addr_t coord_ieee = {0};
+
+            if (esp_zb_ieee_address_by_short(ZB_COORDINATOR_SHORT_ADDR, coord_ieee) != ESP_OK) {
+                esp_zb_scheduler_alarm((esp_zb_callback_t)zb_dht_cluster_setup_cb, 0, 2000);
+                return;
+            }
+
+            esp_zb_get_long_address(bind_req.src_address);
+            bind_req.src_endp = s_dht_bind_ep;
+            bind_req.cluster_id = ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT;
+            bind_req.dst_addr_mode = ESP_ZB_ZDO_BIND_DST_ADDR_MODE_64_BIT_EXTENDED;
+            memcpy(bind_req.dst_address_u.addr_long, coord_ieee, sizeof(esp_zb_ieee_addr_t));
+            bind_req.dst_endp = ZB_COORDINATOR_ENDPOINT;
+            bind_req.req_dst_addr = ZB_COORDINATOR_SHORT_ADDR;
+            esp_zb_zdo_device_bind_req(&bind_req, zb_bind_dht_cluster_cb, NULL);
+            ESP_LOGI(TAG, "binding humidity cluster ep=%u to coordinator", s_dht_bind_ep);
+            return;
+        }
+
+        ESP_LOGI(TAG, "DHT clusters bound to coordinator");
+        zb_dht_report_ready(s_dht_bind_ep);
+        return;
+    }
+
+    ESP_LOGW(TAG, "DHT cluster bind failed: %d, retry in 2s", zdo_status);
+    esp_zb_scheduler_alarm((esp_zb_callback_t)zb_dht_cluster_setup_cb, 0, 2000);
+}
+
+static void zb_bind_dht_clusters(uint8_t endpoint)
+{
+    esp_zb_zdo_bind_req_param_t bind_req = {0};
+    esp_zb_ieee_addr_t coord_ieee = {0};
+
+    s_dht_bind_ep = endpoint;
+    s_dht_ready = false;
+    s_dht_bind_step = 0;
+
+    if (esp_zb_ieee_address_by_short(ZB_COORDINATOR_SHORT_ADDR, coord_ieee) != ESP_OK) {
+        ESP_LOGW(TAG, "coordinator ieee lookup failed, retry DHT bind in 2s");
+        esp_zb_scheduler_alarm((esp_zb_callback_t)zb_dht_cluster_setup_cb, 0, 2000);
+        return;
+    }
+
+    esp_zb_get_long_address(bind_req.src_address);
+    bind_req.src_endp = endpoint;
+    bind_req.cluster_id = ESP_ZB_ZCL_CLUSTER_ID_TEMP_MEASUREMENT;
+    bind_req.dst_addr_mode = ESP_ZB_ZDO_BIND_DST_ADDR_MODE_64_BIT_EXTENDED;
+    memcpy(bind_req.dst_address_u.addr_long, coord_ieee, sizeof(esp_zb_ieee_addr_t));
+    bind_req.dst_endp = ZB_COORDINATOR_ENDPOINT;
+    bind_req.req_dst_addr = ZB_COORDINATOR_SHORT_ADDR;
+
+    esp_zb_zdo_device_bind_req(&bind_req, zb_bind_dht_cluster_cb, NULL);
+    ESP_LOGI(TAG, "binding DHT temperature cluster ep=%u to coordinator", endpoint);
+}
+
+static esp_err_t zb_enable_humidity_reporting(uint8_t endpoint)
+{
+    esp_zb_zcl_attr_location_info_t loc = {
+        .endpoint_id = endpoint,
+        .cluster_id = ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT,
+        .cluster_role = ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
+        .manuf_code = ESP_ZB_ZCL_ATTR_NON_MANUFACTURER_SPECIFIC,
+        .attr_id = ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID,
+    };
+
+    if (esp_zb_zcl_find_reporting_info(loc) != NULL) {
+        return esp_zb_zcl_start_attr_reporting(loc);
+    }
+
+    esp_zb_zcl_reporting_info_t report = {0};
+    report.direction = ESP_ZB_ZCL_REPORT_DIRECTION_SEND;
+    report.ep = endpoint;
+    report.cluster_id = ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT;
+    report.cluster_role = ESP_ZB_ZCL_CLUSTER_SERVER_ROLE;
+    report.attr_id = ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID;
+    report.manuf_code = ESP_ZB_ZCL_ATTR_NON_MANUFACTURER_SPECIFIC;
+    report.u.send_info.min_interval = 30;
+    report.u.send_info.max_interval = 300;
+    report.u.send_info.def_min_interval = 30;
+    report.u.send_info.def_max_interval = 300;
+    report.u.send_info.delta.u16 = 100;
+    report.dst.short_addr = ZB_COORDINATOR_SHORT_ADDR;
+    report.dst.endpoint = ZB_COORDINATOR_ENDPOINT;
+    report.dst.profile_id = ESP_ZB_AF_HA_PROFILE_ID;
+
+    esp_err_t err = esp_zb_zcl_update_reporting_info(&report);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "humidity reporting config failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    return esp_zb_zcl_start_attr_reporting(loc);
+}
+
+static void zb_dht_cluster_setup_cb(uint8_t param)
+{
+    (void)param;
+
+    if (!s_joined || s_dht_ready || s_profile_mgr == NULL ||
+        !profile_mgr_dht_enabled(s_profile_mgr)) {
+        return;
+    }
+
+    zb_bind_dht_clusters(profile_mgr_get_dht_endpoint(s_profile_mgr));
+}
+
 static void zb_on_network_joined(void)
 {
     uint16_t short_addr = esp_zb_get_short_address();
@@ -279,8 +489,14 @@ static void zb_on_network_joined(void)
     }
     s_joined = true;
 
+    zigbee_gpio_io_on_network_joined();
+
     if (s_profile_mgr != NULL && profile_mgr_temperature_enabled(s_profile_mgr)) {
         esp_zb_scheduler_alarm((esp_zb_callback_t)zb_temp_cluster_setup_cb, 0, 1000);
+    }
+
+    if (s_profile_mgr != NULL && profile_mgr_dht_enabled(s_profile_mgr)) {
+        esp_zb_scheduler_alarm((esp_zb_callback_t)zb_dht_cluster_setup_cb, 0, 1500);
     }
 }
 
@@ -381,6 +597,9 @@ static esp_err_t zb_action_handler(esp_zb_core_action_callback_id_t callback_id,
     case ESP_ZB_CORE_IDENTIFY_EFFECT_CB_ID:
         return zb_identify_effect_handler(
             (const esp_zb_zcl_identify_effect_message_t *)message);
+    case ESP_ZB_CORE_OTA_UPGRADE_VALUE_CB_ID:
+    case ESP_ZB_CORE_OTA_UPGRADE_QUERY_IMAGE_RESP_CB_ID:
+        return zigbee_ota_handle_action(callback_id, message);
     default:
         return ESP_OK;
     }
@@ -441,6 +660,48 @@ void zigbee_device_report_temperature(uint8_t endpoint, float temp_c)
     }
 }
 
+void zigbee_device_report_humidity(uint8_t endpoint, float hum_pct)
+{
+    uint16_t zb_hum = 0;
+
+    if (hum_pct < 0.0f) {
+        zb_hum = 0;
+    } else if (hum_pct > 100.0f) {
+        zb_hum = 10000U;
+    } else {
+        zb_hum = (uint16_t)(hum_pct * 100.0f);
+    }
+
+    esp_zb_zcl_status_t status = ESP_ZB_ZCL_STATUS_FAIL;
+
+    if (esp_zb_lock_acquire(portMAX_DELAY)) {
+        if (esp_zb_zcl_get_attribute(endpoint, ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT,
+                                     ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
+                                     ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID) == NULL) {
+            esp_zb_lock_release();
+            ESP_LOGW(TAG, "humidity ep %u not registered", endpoint);
+            return;
+        }
+
+        status = esp_zb_zcl_set_attribute_val(
+            endpoint,
+            ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT,
+            ESP_ZB_ZCL_CLUSTER_SERVER_ROLE,
+            ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID,
+            (void *)&zb_hum,
+            false);
+        esp_zb_lock_release();
+    }
+
+    if (status != ESP_ZB_ZCL_STATUS_SUCCESS) {
+        ESP_LOGW(TAG, "report humidity failed: %d", status);
+    } else if (!s_dht_ready) {
+        ESP_LOGI(TAG, "humidity endpoint=%u -> %.1f %% (local, awaiting network setup)", endpoint, hum_pct);
+    } else {
+        ESP_LOGI(TAG, "humidity endpoint=%u -> %.1f %% (attribute updated)", endpoint, hum_pct);
+    }
+}
+
 void zigbee_device_set_joined(bool joined)
 {
     s_joined = joined;
@@ -478,6 +739,51 @@ static esp_err_t zb_add_temp_endpoint(esp_zb_ep_list_t *ep_list, uint8_t endpoin
     return err;
 }
 
+static esp_err_t zb_add_dht_endpoint(esp_zb_ep_list_t *ep_list, uint8_t endpoint)
+{
+    esp_zb_temperature_sensor_cfg_t cfg = ESP_ZB_DEFAULT_TEMPERATURE_SENSOR_CONFIG();
+    cfg.temp_meas_cfg.min_value = (int16_t)(-4000);
+    cfg.temp_meas_cfg.max_value = (int16_t)(8000);
+    cfg.temp_meas_cfg.measured_value = ESP_ZB_ZCL_TEMP_MEASUREMENT_MEASURED_VALUE_UNKNOWN;
+
+    esp_zb_cluster_list_t *clusters = esp_zb_temperature_sensor_clusters_create(&cfg);
+    if (clusters == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    uint16_t hum_default = ESP_ZB_ZCL_REL_HUMIDITY_MEASUREMENT_MEASURED_VALUE_UNKNOWN;
+    uint16_t hum_min = 0;
+    uint16_t hum_max = 10000U;
+
+    esp_zb_attribute_list_t *humidity_cluster =
+        esp_zb_zcl_attr_list_create(ESP_ZB_ZCL_CLUSTER_ID_REL_HUMIDITY_MEASUREMENT);
+    if (humidity_cluster == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+
+    esp_zb_humidity_meas_cluster_add_attr(
+        humidity_cluster, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_VALUE_ID, &hum_default);
+    esp_zb_humidity_meas_cluster_add_attr(
+        humidity_cluster, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_MIN_VALUE_ID, &hum_min);
+    esp_zb_humidity_meas_cluster_add_attr(
+        humidity_cluster, ESP_ZB_ZCL_ATTR_REL_HUMIDITY_MEASUREMENT_MAX_VALUE_ID, &hum_max);
+    esp_zb_cluster_list_add_humidity_meas_cluster(clusters, humidity_cluster,
+                                                  ESP_ZB_ZCL_CLUSTER_SERVER_ROLE);
+
+    esp_zb_endpoint_config_t ep_cfg = {
+        .endpoint = endpoint,
+        .app_profile_id = ESP_ZB_AF_HA_PROFILE_ID,
+        .app_device_id = ESP_ZB_HA_TEMPERATURE_SENSOR_DEVICE_ID,
+        .app_device_version = 0,
+    };
+
+    esp_err_t err = esp_zb_ep_list_add_ep(ep_list, clusters, ep_cfg);
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "registered DHT22 HA endpoint %u (temp + humidity)", endpoint);
+    }
+    return err;
+}
+
 static void zb_register_endpoints(profile_mgr_t *profile_mgr)
 {
     esp_zb_on_off_light_cfg_t light_cfg = ESP_ZB_DEFAULT_ON_OFF_LIGHT_CONFIG();
@@ -495,9 +801,19 @@ static void zb_register_endpoints(profile_mgr_t *profile_mgr)
         ESP_LOGW(TAG, "temperature endpoint failed: %s", esp_err_to_name(err));
     }
 
+    err = zb_add_dht_endpoint(ep_list, profile_mgr_get_dht_endpoint(profile_mgr));
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "DHT endpoint failed: %s", esp_err_to_name(err));
+    }
+
     err = zigbee_camper_cluster_add_endpoint(ep_list);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "config endpoint registration failed: %s", esp_err_to_name(err));
+    }
+
+    err = zigbee_ota_add_endpoint(ep_list);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "OTA endpoint registration failed: %s", esp_err_to_name(err));
     }
 
     esp_zb_device_register(ep_list);
@@ -547,6 +863,8 @@ esp_err_t zigbee_device_start(const zigbee_device_deps_t *deps)
 
     if (deps->event_bus != NULL) {
         event_bus_subscribe(deps->event_bus, EVT_TEMPERATURE_UPDATE, zb_temp_state_handler, NULL);
+        event_bus_subscribe(deps->event_bus, EVT_DHT_TEMPERATURE_UPDATE, zb_dht_temp_handler, NULL);
+        event_bus_subscribe(deps->event_bus, EVT_HUMIDITY_UPDATE, zb_dht_humidity_handler, NULL);
     }
 
     esp_zb_platform_config_t config = camper_zb_platform_config();

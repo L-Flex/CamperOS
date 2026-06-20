@@ -157,7 +157,7 @@
   </div>
 
   <script>
-    const RESERVED = [0, 8, 9];
+    const RESERVED = [0, 6, 7, 8, 9, 16, 17];
     const BOOT_GPIO = 9;
     const LED_GPIO = 8;
     const STRAPPING = [4, 5, 8, 9, 15];
@@ -175,7 +175,7 @@
 
     const ASSIGNABLE_PINS = [];
     for (let i = 0; i <= 23; i++) {
-      if (i === 0 || i === LED_GPIO || i === BOOT_GPIO) continue;
+      if (RESERVED.includes(i)) continue;
       if (STRAPPING.includes(i)) continue;
       ASSIGNABLE_PINS.push(i);
     }
@@ -185,10 +185,8 @@
       filesDone: false,
       integrationDone: false,
       firmwareDone: false,
-      enableTemp: false,
       pinRoles: { 3: "O" },
       pinMap: "3:O",
-      tempPin: "6",
       nodeName: "campernode",
     };
 
@@ -197,6 +195,7 @@
         ["", "— nicht verwendet"],
         ["I", "Eingang (Taster/Sensor)"],
         ["O", "Ausgang (Relais/LED)"],
+        ["Od", "Ausgang MOSFET (Open-Drain, ab v0.2.0)"],
       ].map(([v, l]) =>
         `<option value="${v}"${v === selected ? " selected" : ""}>${l}</option>`
       ).join("");
@@ -206,18 +205,9 @@
       const parts = [];
       for (const pin of ASSIGNABLE_PINS) {
         const role = roles[pin];
-        if (role === "O" || role === "I") parts.push(`${pin}:${role}`);
+        if (role === "O" || role === "Od" || role === "I") parts.push(`${pin}:${role}`);
       }
       return parts.join(",");
-    }
-
-    function gpioOptions() {
-      let html = "";
-      for (let i = 0; i <= 23; i++) {
-        if (i === 0 || i === LED_GPIO || i === BOOT_GPIO || STRAPPING.includes(i)) continue;
-        html += `<option value="${i}">GPIO ${i}</option>`;
-      }
-      return html;
     }
 
     function renderProgress() {
@@ -246,7 +236,8 @@
             <tr><td>ESP <span class="tag-restart">Neustart</span></td><td>Automatisch ~2 s nach dem Speichern der GPIO-Karte</td></tr>
             <tr><td><strong>Neu konfigurieren</strong></td><td>Am CamperNode-Gerät (Zahnrad) — ca. 30 s nach GPIO-Karte, damit Schalter erscheinen</td></tr>
             <tr><td>Erneut koppeln</td><td>Nur wenn Schalter fehlen trotz „Neu konfigurieren" — sonst nicht nötig</td></tr>
-            <tr><td>Firmware flashen</td><td>Bei neuem Board oder wenn Eingänge falsch angezeigt werden (alte Firmware)</td></tr>
+            <tr><td>Firmware flashen (USB)</td><td>Neues Board: <strong>0.2.0</strong> direkt per USB — oder einmalig 0.1.1 OTA-Basis, dann 0.2.0 per Zigbee-OTA</td></tr>
+            <tr><td><strong>OTA Update</strong> (0.1.1 → 0.2.0)</td><td>OTA-Datei in <code>/config/zha_ota/</code>, HA-YAML mit <code>advanced</code>-Provider, HA neu starten, dann „Trigger OTA" in ZHA</td></tr>
           </tbody>
         </table>`;
     }
@@ -293,10 +284,26 @@
           </ol>
 
           <h3>C) configuration.yaml</h3>
-          <p>Nur den Quirk-Pfad — <strong>kein</strong> <code>campernode_config:</code> Eintrag!</p>
+          <p>Quirk-Pfad — <strong>kein</strong> <code>campernode_config:</code> Eintrag!</p>
           <pre>zha:
   enable_quirks: true
-  custom_quirks_path: /config/custom_zha_quirks/</pre>
+  custom_quirks_path: /config/custom_zha_quirks/
+  zigpy_config:
+    ota:
+      extra_providers:
+        - type: advanced
+          path: /config/zha_ota
+          warning: >-
+            I understand I can *destroy* my devices by enabling OTA updates from files.
+            Some OTA updates can be mistakenly applied to the wrong device, breaking it.
+            I am consciously using this at my own risk.</pre>
+          <p class="hint">Nur nötig für Zigbee-OTA (Update von 0.1.1 auf 0.2.0). Bei direktem USB-Flash von 0.2.0 optional.</p>
+          <h3>D) OTA-Datei (nur bei Zigbee-Update)</h3>
+          <ol class="simple">
+            <li>Ordner anlegen: <span class="badge">/config/zha_ota/</span></li>
+            <li>Datei kopieren: <span class="badge">build/147b-c602-00000200-campernode.ota</span></li>
+            <li>Home Assistant neu starten</li>
+          </ol>
 
           <label>
             <input type="checkbox" id="files-done" ${state.filesDone ? "checked" : ""}>
@@ -327,12 +334,18 @@
 
       if (s.id === "firmware") {
         c.innerHTML = `
-          <h2>Schritt 3 — Firmware auf dem ESP32 (bei Bedarf)</h2>
-          <p>Überspringen, wenn der Node schon mit aktueller CamperNode-Firmware läuft.</p>
+          <h2>Schritt 3 — Firmware auf dem ESP32 (v0.2.0)</h2>
+          <p><strong>Empfohlen (neues Board):</strong> 0.2.0 direkt per USB flashen — kein OTA nötig.</p>
           <ol class="simple">
-            <li>Projekt mit ESP-IDF bauen und auf den ESP32 flashen</li>
-            <li>Seriell prüfen: <code>CamperNode OS v0.1.0 booting</code></li>
-            <li>Neue Firmware bringt u. a.: GPIO-Karte per Zigbee, korrekte Eingänge (nicht dauerhaft „an"), verzögerter Neustart nach GPIO-Karte</li>
+            <li>Im Projektordner: <code>idf.py build</code> und <code>idf.py -p COMx flash</code></li>
+            <li>Seriell prüfen: <code>CamperNode OS v0.2.0 booting</code></li>
+            <li>Enthält: GPIO-Karte, DHT22/DS18B20, MOSFET <code>:Od</code>, Zigbee-OTA-Client</li>
+          </ol>
+          <h3>Alternative: OTA-Weg (0.1.1 → 0.2.0)</h3>
+          <ol class="simple">
+            <li>Einmalig USB: OTA-Basis <strong>0.1.1</strong> flashen (<code>sdkconfig.defaults.ota-base</code>)</li>
+            <li>OTA-Datei + HA-YAML wie in Schritt 1 (Abschnitt D)</li>
+            <li>In ZHA: Button <strong>Trigger OTA</strong> — danach <code>v0.2.0 booting</code></li>
           </ol>
           <p class="ok-hint">Nach dem Flashen: ESP neu starten lassen, dann mit Schritt „Koppeln" weitermachen.</p>
           <label>
@@ -353,7 +366,7 @@
             <li>CamperNode einschalten — er joint automatisch (Network Steering)</li>
             <li>Warten, bis <span class="badge">CamperNode OS</span> (Hersteller CamperOS) erscheint</li>
           </ol>
-          <p>Jetzt siehst du u. a. <strong>Restart</strong>, <strong>Log level</strong>, <strong>Temperatur aktiv</strong> — noch <em>keine</em> GPIO-Schalter (GPIO-Karte fehlt noch).</p>
+          <p>Jetzt siehst du u. a. <strong>Restart</strong>, <strong>Trigger OTA</strong>, <strong>Log level</strong>, <strong>GPIO 6/7 sensor</strong> — noch <em>keine</em> GPIO-Schalter (GPIO-Karte fehlt noch).</p>
           <p class="hint">Optional: Gerätenamen in ZHA ändern (z. B. „Relais Dachzelt").</p>
           ${navButtons(true, "GPIO-Karte planen")}
         `;
@@ -374,21 +387,18 @@
               <tr><td>GPIO 0</td><td><em>Reserviert — nicht verwenden</em></td></tr>
               <tr><td>GPIO ${BOOT_GPIO}</td><td><em>BOOT-Taster — <strong>immer Eingang</strong>, nicht in Karte eintragen</em></td></tr>
               <tr><td>GPIO ${LED_GPIO}</td><td><em>Status-LED — reserviert</em></td></tr>
+              <tr><td>GPIO 6</td><td><em>Sensor optional (DS18B20/DHT22) — in HA: „GPIO 6 sensor"</em></td></tr>
+              <tr><td>GPIO 7</td><td><em>Sensor optional (DS18B20/DHT22) — in HA: „GPIO 7 sensor"</em></td></tr>
+              <tr><td>GPIO 16</td><td><em>UART-Konsole (Monitor) — reserviert</em></td></tr>
+              <tr><td>GPIO 17</td><td><em>UART-Konsole (Monitor) — reserviert</em></td></tr>
               ${rows}
             </tbody>
           </table>
-          <p><strong>Format:</strong> <code>3:O</code> = Ausgang (Schalter), <code>10:I</code> = Eingang (Binary Sensor)</p>
-          <label>
-            <input type="checkbox" id="enable-temp" ${state.enableTemp ? "checked" : ""}>
-            DS18B20 Temperatur zusätzlich
-          </label>
-          <label for="temp-pin">Temperatur-Datenpin (GPIO)</label>
-          <select id="temp-pin">${gpioOptions()}</select>
+          <p><strong>Format:</strong> <code>3:O</code> = Relais, <code>5:Od</code> = MOSFET (Open-Drain, ab <strong>v0.2.0</strong>), <code>10:I</code> = Eingang</p>
           <label for="node-name">Gerätename (Merkhilfe, optional)</label>
           <input type="text" id="node-name" placeholder="z.B. camper-küche" value="${state.nodeName}">
           ${navButtons(true, "Weiter")}
         `;
-        document.getElementById("temp-pin").value = state.tempPin;
       }
 
       if (s.id === "apply") {
@@ -404,19 +414,13 @@
             <li>Am CamperNode-Gerät: <strong>Neu konfigurieren</strong> (Zahnrad-Button) klicken</li>
             <li>Geräteseite neu laden — Schalter und Eingänge prüfen</li>
           </ol>
-          ${state.enableTemp ? `
-          <h3>Temperatur (optional)</h3>
-          <ol class="simple">
-            <li><strong>Temperatur aktiv</strong> → einschalten (1)</li>
-            <li>Temperatur erscheint als eigener Sensor (Endpoint 2)</li>
-          </ol>` : ""}
           <p class="hint">GPIO-Karte nochmal speichern löst ebenfalls eine automatische Entitäten-Aktualisierung aus.</p>
           ${navButtons(true, "Zusammenfassung")}
         `;
       }
 
       if (s.id === "done") {
-        const outs = Object.entries(state.pinRoles).filter(([, r]) => r === "O").map(([p]) => `GPIO ${p}`);
+        const outs = Object.entries(state.pinRoles).filter(([, r]) => r === "O" || r === "Od").map(([p]) => `GPIO ${p}${state.pinRoles[p] === "Od" ? " (MOSFET)" : ""}`);
         const ins = Object.entries(state.pinRoles).filter(([, r]) => r === "I").map(([p]) => `GPIO ${p}`);
         c.innerHTML = `
           <h2>Fertig — Zusammenfassung</h2>
@@ -427,7 +431,6 @@
               <li><strong>Schalter (Ausgänge):</strong> ${outs.length ? outs.join(", ") : "—"}</li>
               <li><strong>Eingänge in Karte:</strong> ${ins.length ? ins.join(", ") : "—"}</li>
               <li><strong>Immer sichtbar:</strong> GPIO 9 BOOT (Eingang)</li>
-              ${state.enableTemp ? `<li><strong>Temperatur:</strong> aktiv, Pin GPIO ${state.tempPin}</li>` : ""}
             </ul>
           </div>
 
@@ -437,7 +440,7 @@
           <h3>Checkliste „Funktioniert alles?"</h3>
           <ul class="simple">
             <li>GPIO-Karte auf Geräteseite sichtbar und gespeichert?</li>
-            <li>Schalter <code>GPIO …</code> für jeden <code>:O</code>-Pin?</li>
+            <li>Schalter <code>GPIO …</code> für jeden <code>:O</code>- und <code>:Od</code>-Pin?</li>
             <li>Binary Sensor <code>GPIO 9 BOOT</code> + je <code>:I</code>-Pin?</li>
             <li>Eingänge <strong>off</strong> wenn nicht gedrückt? (sonst: Firmware flashen)</li>
             <li>Relais testweise ein-/ausschalten</li>
@@ -485,20 +488,11 @@
           if (sel.value) state.pinRoles[pin] = sel.value;
         });
         state.pinMap = buildPinMapFromRoles(state.pinRoles);
-        state.enableTemp = document.getElementById("enable-temp").checked;
-        state.tempPin = document.getElementById("temp-pin").value;
         state.nodeName = document.getElementById("node-name").value.trim() || "campernode";
-        const outs = Object.values(state.pinRoles).filter(r => r === "O").length;
+        const outs = Object.values(state.pinRoles).filter(r => r === "O" || r === "Od").length;
         if (outs === 0) {
           alert("Mindestens einen Pin als Ausgang wählen.");
           return false;
-        }
-        if (state.enableTemp) {
-          const tp = Number(state.tempPin);
-          if (state.pinRoles[tp]) {
-            alert(`GPIO ${tp} ist schon belegt — anderen Temperatur-Pin wählen.`);
-            return false;
-          }
         }
       }
       return true;

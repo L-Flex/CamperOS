@@ -1,0 +1,13 @@
+{
+  "firmwares": [
+    {
+      "path": "147b-c602-00000200-campernode.ota",
+      "manufacturer_id": 5243,
+      "image_type": 50690,
+      "file_version": 512,
+      "file_size": 613150,
+      "checksum": "sha512:c02064fadca2d6f5ee02876f53e48e64e333ce280348ffc37abfb5ae44e755a189772698979adf94ad60115e65a04c79d78b012c4a99d489ab6c5a492cd539c0",
+      "changelog": "CamperNode OS 0.2.0 (MOSFET :Od support)"
+    }
+  ]
+}

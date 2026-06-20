@@ -84,16 +84,39 @@ esp_err_t ota_mgr_init(ota_mgr_t *mgr)
 
 esp_err_t ota_mgr_start_update(ota_mgr_t *mgr, const char *url)
 {
-    if (mgr == NULL || url == NULL || url[0] == '\0') {
+    if (mgr == NULL) {
         return ESP_ERR_INVALID_ARG;
+    }
+
+    if (url == NULL || url[0] == '\0') {
+        ota_publish(mgr, EVT_OTA_START, 0);
+        return ESP_ERR_NOT_SUPPORTED;
     }
 
     (void)url;
     mgr->state = OTA_STATE_FAILED;
     ota_publish(mgr, EVT_OTA_START, 0);
     ota_publish(mgr, EVT_OTA_FINISHED, -1);
-    ESP_LOGW(TAG, "HTTP OTA not enabled — use Zigbee OTA (Phase 10)");
+    ESP_LOGW(TAG, "HTTP OTA not enabled — use Zigbee OTA");
     return ESP_ERR_NOT_SUPPORTED;
+}
+
+esp_err_t ota_mgr_request_zigbee(ota_mgr_t *mgr)
+{
+    if (mgr == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    ota_publish(mgr, EVT_OTA_START, 0);
+    mgr->state = OTA_STATE_IDLE;
+    return ESP_OK;
+}
+
+void ota_mgr_set_state(ota_mgr_t *mgr, ota_state_t state)
+{
+    if (mgr != NULL) {
+        mgr->state = state;
+    }
 }
 
 ota_state_t ota_mgr_get_state(const ota_mgr_t *mgr)

@@ -29,6 +29,8 @@ void ota_mgr_destroy(ota_mgr_t *mgr);
 
 esp_err_t ota_mgr_init(ota_mgr_t *mgr);
 esp_err_t ota_mgr_start_update(ota_mgr_t *mgr, const char *url);
+esp_err_t ota_mgr_request_zigbee(ota_mgr_t *mgr);
+void ota_mgr_set_state(ota_mgr_t *mgr, ota_state_t state);
 ota_state_t ota_mgr_get_state(const ota_mgr_t *mgr);
 esp_err_t ota_mgr_mark_valid(ota_mgr_t *mgr);
 

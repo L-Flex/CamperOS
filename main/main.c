@@ -100,6 +100,8 @@ void app_main(void)
     };
     ctx.profile_mgr = profile_mgr_create(&profile_ctx);
 
+    ctx.ota_mgr = ota_mgr_create(ctx.event_bus, ctx.storage);
+
     ctx.zigbee_mgr = zigbee_mgr_create(&(zigbee_mgr_deps_t){
         .event_bus = ctx.event_bus,
         .storage = ctx.storage,
@@ -108,9 +110,9 @@ void app_main(void)
         .logger = ctx.logger,
         .ota_mgr = ctx.ota_mgr,
     });
-    ctx.ota_mgr = ota_mgr_create(ctx.event_bus, ctx.storage);
 
-    if (ctx.watchdog == NULL || ctx.gpio_mgr == NULL || ctx.profile_mgr == NULL) {
+    if (ctx.watchdog == NULL || ctx.gpio_mgr == NULL || ctx.profile_mgr == NULL ||
+        ctx.ota_mgr == NULL) {
         logger_error(ctx.logger, TAG, "module allocation failed");
         app_teardown(&ctx);
         return;

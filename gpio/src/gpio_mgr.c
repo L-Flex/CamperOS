@@ -100,6 +100,7 @@ static void gpio_debounce_cb(void *arg)
 
     if (pressed != slot->last_button_level) {
         slot->last_button_level = pressed;
+        ESP_LOGI(TAG, "button pin=%u %s", (unsigned)slot->cfg.pin, pressed ? "pressed" : "released");
         gpio_publish_button(mgr, slot, pressed ? EVT_BUTTON_PRESSED : EVT_BUTTON_RELEASED);
     }
     slot->debounce_pending = false;

@@ -13,6 +13,7 @@
 #include "gpio_mgr.h"
 #include "logger.h"
 #include "ota_mgr.h"
+#include "zigbee_ota.h"
 #include "profile_interface.h"
 #include "profile_mgr.h"
 #include "storage.h"
@@ -52,6 +53,9 @@ static uint8_t s_attr_button_gpio;
 static uint8_t s_attr_output_gpio;
 static uint8_t s_attr_feature_flags;
 static uint8_t s_attr_temp_gpio;
+static uint8_t s_attr_dht_gpio;
+static uint8_t s_attr_sensor_gpio6;
+static uint8_t s_attr_sensor_gpio7;
 
 static void zb_publish(event_type_t type, int32_t value)
 {
@@ -200,7 +204,7 @@ static void sync_legacy_pins_from_pin_map(void)
     uint8_t temp_gpio = s_attr_temp_gpio;
 
     if (map[0] != '\0') {
-        gpio_io_parse_pin_map(map, temp_gpio, out_pins, &out_n, in_pins, &in_n);
+        gpio_io_parse_pin_map(map, temp_gpio, out_pins, &out_n, in_pins, &in_n, NULL);
     }
 
     s_attr_output_gpio = (out_n > 0) ? out_pins[0] : 0;
@@ -337,7 +341,7 @@ static esp_err_t validate_temp_gpio_pin(uint8_t pin)
         uint8_t in_pins[CAMPER_IO_MAX_INPUTS];
         size_t out_n = 0;
         size_t in_n = 0;
-        if (gpio_io_parse_pin_map(map, pin, out_pins, &out_n, in_pins, &in_n) < 0) {
+        if (gpio_io_parse_pin_map(map, pin, out_pins, &out_n, in_pins, &in_n, NULL) < 0) {
             return ESP_ERR_INVALID_ARG;
         }
         for (size_t i = 0; i < out_n; i++) {
@@ -409,50 +413,190 @@ static esp_err_t apply_calib_blob(const uint8_t *payload, size_t payload_len)
     return ESP_OK;
 }
 
+static esp_err_t validate_sensor_mode(uint8_t mode)
+{
+    return mode <= CAMPER_SENSOR_DHT22 ? ESP_OK : ESP_ERR_INVALID_ARG;
+}
+
+static esp_err_t validate_sensor_pin_pair(uint8_t gpio6, uint8_t gpio7)
+{
+    esp_err_t err = validate_sensor_mode(gpio6);
+    if (err != ESP_OK) {
+        return err;
+    }
+    err = validate_sensor_mode(gpio7);
+    if (err != ESP_OK) {
+        return err;
+    }
+    if (gpio6 != CAMPER_SENSOR_NONE && gpio6 == gpio7) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return ESP_OK;
+}
+
+static void sync_active_sensor_gpios(void)
+{
+    if (s_deps.profile_mgr != NULL) {
+        s_attr_temp_gpio = profile_mgr_get_temp_gpio(s_deps.profile_mgr);
+        s_attr_dht_gpio = profile_mgr_get_dht_gpio(s_deps.profile_mgr);
+        return;
+    }
+
+    s_attr_temp_gpio = 0;
+    s_attr_dht_gpio = 0;
+    if (s_attr_sensor_gpio6 == CAMPER_SENSOR_DS18B20) {
+        s_attr_temp_gpio = CAMPER_BOARD_SENSOR_GPIO_6;
+    } else if (s_attr_sensor_gpio7 == CAMPER_SENSOR_DS18B20) {
+        s_attr_temp_gpio = CAMPER_BOARD_SENSOR_GPIO_7;
+    }
+    if (s_attr_sensor_gpio6 == CAMPER_SENSOR_DHT22) {
+        s_attr_dht_gpio = CAMPER_BOARD_SENSOR_GPIO_6;
+    } else if (s_attr_sensor_gpio7 == CAMPER_SENSOR_DHT22) {
+        s_attr_dht_gpio = CAMPER_BOARD_SENSOR_GPIO_7;
+    }
+}
+
+static uint8_t flags_from_sensor_pins(uint8_t gpio6, uint8_t gpio7)
+{
+    uint8_t flags = 0;
+
+    if (gpio6 == CAMPER_SENSOR_DS18B20 || gpio7 == CAMPER_SENSOR_DS18B20) {
+        flags |= CAMPER_FEATURE_TEMPERATURE;
+    }
+    if (gpio6 == CAMPER_SENSOR_DHT22 || gpio7 == CAMPER_SENSOR_DHT22) {
+        flags |= CAMPER_FEATURE_DHT22;
+    }
+    return flags;
+}
+
+static void legacy_flags_to_sensor_pins(uint8_t flags, uint8_t *gpio6, uint8_t *gpio7)
+{
+    *gpio6 = CAMPER_SENSOR_NONE;
+    *gpio7 = CAMPER_SENSOR_NONE;
+
+    if ((flags & CAMPER_FEATURE_TEMPERATURE) != 0) {
+        *gpio6 = CAMPER_SENSOR_DS18B20;
+    }
+    if ((flags & CAMPER_FEATURE_DHT22) != 0) {
+        if (*gpio6 == CAMPER_SENSOR_NONE) {
+            *gpio6 = CAMPER_SENSOR_DHT22;
+        } else {
+            *gpio7 = CAMPER_SENSOR_DHT22;
+        }
+    }
+}
+
 static void load_feature_settings(void)
 {
     s_attr_feature_flags = 0;
-    s_attr_temp_gpio = CAMPER_BOARD_TEMP_GPIO;
+    s_attr_sensor_gpio6 = CAMPER_SENSOR_NONE;
+    s_attr_sensor_gpio7 = CAMPER_SENSOR_NONE;
+    s_attr_temp_gpio = 0;
+    s_attr_dht_gpio = 0;
 
     if (s_deps.storage != NULL) {
         storage_get_u8(s_deps.storage, CAMPER_NVS_NS_SETTINGS, CAMPER_KEY_FEATURE_FLAGS,
                        &s_attr_feature_flags);
+        storage_get_u8(s_deps.storage, CAMPER_NVS_NS_SETTINGS, CAMPER_KEY_SENSOR_GPIO6,
+                       &s_attr_sensor_gpio6);
+        storage_get_u8(s_deps.storage, CAMPER_NVS_NS_SETTINGS, CAMPER_KEY_SENSOR_GPIO7,
+                       &s_attr_sensor_gpio7);
+
+        if (s_attr_sensor_gpio6 == CAMPER_SENSOR_NONE &&
+            s_attr_sensor_gpio7 == CAMPER_SENSOR_NONE) {
+            uint8_t legacy_type = CAMPER_SENSOR_NONE;
+            storage_get_u8(s_deps.storage, CAMPER_NVS_NS_SETTINGS, CAMPER_KEY_SENSOR_TYPE,
+                           &legacy_type);
+            if (legacy_type != CAMPER_SENSOR_NONE) {
+                s_attr_sensor_gpio6 = legacy_type;
+            } else {
+                legacy_flags_to_sensor_pins(s_attr_feature_flags,
+                                            &s_attr_sensor_gpio6, &s_attr_sensor_gpio7);
+            }
+        }
     }
+
+    s_attr_feature_flags = flags_from_sensor_pins(s_attr_sensor_gpio6, s_attr_sensor_gpio7);
+    sync_active_sensor_gpios();
 }
 
-static esp_err_t apply_feature_flags(uint8_t flags)
+static esp_err_t apply_sensor_pins(uint8_t gpio6, uint8_t gpio7)
 {
-    s_attr_feature_flags = flags;
+    esp_err_t err = validate_sensor_pin_pair(gpio6, gpio7);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    s_attr_sensor_gpio6 = gpio6;
+    s_attr_sensor_gpio7 = gpio7;
+    s_attr_feature_flags = flags_from_sensor_pins(gpio6, gpio7);
 
     if (s_deps.storage != NULL) {
-        esp_err_t err = storage_set_u8(s_deps.storage, CAMPER_NVS_NS_SETTINGS,
-                                         CAMPER_KEY_FEATURE_FLAGS, flags);
+        err = storage_set_u8(s_deps.storage, CAMPER_NVS_NS_SETTINGS,
+                             CAMPER_KEY_SENSOR_GPIO6, gpio6);
+        if (err != ESP_OK) {
+            return err;
+        }
+        err = storage_set_u8(s_deps.storage, CAMPER_NVS_NS_SETTINGS,
+                             CAMPER_KEY_SENSOR_GPIO7, gpio7);
+        if (err != ESP_OK) {
+            return err;
+        }
+        err = storage_set_u8(s_deps.storage, CAMPER_NVS_NS_SETTINGS,
+                             CAMPER_KEY_FEATURE_FLAGS, s_attr_feature_flags);
+        if (err != ESP_OK) {
+            return err;
+        }
+        err = storage_set_u8(s_deps.storage, CAMPER_NVS_NS_SETTINGS,
+                             CAMPER_KEY_SENSOR_TYPE, gpio6);
         if (err != ESP_OK) {
             return err;
         }
     }
 
     if (s_deps.profile_mgr != NULL) {
-        profile_mgr_apply_feature_flags(s_deps.profile_mgr, flags);
+        err = profile_mgr_apply_sensor_pins(s_deps.profile_mgr, gpio6, gpio7);
+        if (err != ESP_OK) {
+            return err;
+        }
     }
 
+    sync_active_sensor_gpios();
     zb_publish(EVT_CONFIG_CHANGED, 0);
     return ESP_OK;
+}
+
+static esp_err_t apply_sensor_gpio6(uint8_t mode)
+{
+    return apply_sensor_pins(mode, s_attr_sensor_gpio7);
+}
+
+static esp_err_t apply_sensor_gpio7(uint8_t mode)
+{
+    return apply_sensor_pins(s_attr_sensor_gpio6, mode);
+}
+
+static esp_err_t apply_feature_flags(uint8_t flags)
+{
+    uint8_t gpio6 = CAMPER_SENSOR_NONE;
+    uint8_t gpio7 = CAMPER_SENSOR_NONE;
+    legacy_flags_to_sensor_pins(flags, &gpio6, &gpio7);
+    return apply_sensor_pins(gpio6, gpio7);
 }
 
 static esp_err_t apply_temp_gpio(uint8_t pin)
 {
     (void)pin;
-    s_attr_temp_gpio = CAMPER_BOARD_TEMP_GPIO;
+    s_attr_temp_gpio = CAMPER_BOARD_SENSOR_GPIO;
 
     if (s_deps.profile_mgr != NULL) {
-        esp_err_t err = profile_mgr_apply_temp_gpio(s_deps.profile_mgr, CAMPER_BOARD_TEMP_GPIO);
+        esp_err_t err = profile_mgr_apply_temp_gpio(s_deps.profile_mgr, CAMPER_BOARD_SENSOR_GPIO);
         if (err != ESP_OK) {
             return err;
         }
     }
 
-    zigbee_gpio_io_notify_temp_gpio(CAMPER_BOARD_TEMP_GPIO);
+    zigbee_gpio_io_notify_temp_gpio(CAMPER_BOARD_SENSOR_GPIO);
     zb_publish(EVT_CONFIG_CHANGED, 0);
     return ESP_OK;
 }
@@ -532,7 +676,26 @@ static esp_err_t handle_attr_write(uint16_t attr_id, const uint8_t *value, size_
         }
         return apply_feature_flags(value[0]);
 
+    case ZB_ATTR_SENSOR_GPIO6:
+        if (value == NULL || value_len < 1U) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        if (value[0] > CAMPER_SENSOR_DHT22) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        return apply_sensor_gpio6(value[0]);
+
+    case ZB_ATTR_SENSOR_GPIO7:
+        if (value == NULL || value_len < 1U) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        if (value[0] > CAMPER_SENSOR_DHT22) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        return apply_sensor_gpio7(value[0]);
+
     case ZB_ATTR_TEMP_GPIO:
+    case ZB_ATTR_DHT_GPIO:
         return ESP_ERR_NOT_SUPPORTED;
 
     case ZB_ATTR_UPTIME_SEC:
@@ -585,6 +748,15 @@ static esp_zb_attribute_list_t *camper_create_custom_attr_list(void)
     esp_zb_custom_cluster_add_custom_attr(attr_list, ZB_ATTR_TEMP_GPIO,
                                           ESP_ZB_ZCL_ATTR_TYPE_U8,
                                           ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, &s_attr_temp_gpio);
+    esp_zb_custom_cluster_add_custom_attr(attr_list, ZB_ATTR_SENSOR_GPIO6,
+                                          ESP_ZB_ZCL_ATTR_TYPE_U8,
+                                          ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &s_attr_sensor_gpio6);
+    esp_zb_custom_cluster_add_custom_attr(attr_list, ZB_ATTR_SENSOR_GPIO7,
+                                          ESP_ZB_ZCL_ATTR_TYPE_U8,
+                                          ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, &s_attr_sensor_gpio7);
+    esp_zb_custom_cluster_add_custom_attr(attr_list, ZB_ATTR_DHT_GPIO,
+                                          ESP_ZB_ZCL_ATTR_TYPE_U8,
+                                          ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, &s_attr_dht_gpio);
 
     uint8_t *pin_map = NULL;
     uint16_t *output_state = NULL;
@@ -599,7 +771,9 @@ static esp_zb_attribute_list_t *camper_create_custom_attr_list(void)
                                           ESP_ZB_ZCL_ATTR_ACCESS_READ_WRITE, output_state);
     esp_zb_custom_cluster_add_custom_attr(attr_list, ZB_ATTR_INPUT_STATE,
                                           ESP_ZB_ZCL_ATTR_TYPE_U16,
-                                          ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY, input_state);
+                                          ESP_ZB_ZCL_ATTR_ACCESS_READ_ONLY |
+                                              ESP_ZB_ZCL_ATTR_ACCESS_REPORTING,
+                                          input_state);
 
     return attr_list;
 }
@@ -725,10 +899,10 @@ esp_err_t zigbee_camper_cluster_handle_custom_cmd(const esp_zb_zcl_custom_cluste
         break;
 
     case ZB_CMD_TRIGGER_OTA:
-        zb_publish(EVT_OTA_START, 0);
         if (s_deps.ota_mgr != NULL) {
-            ota_mgr_start_update(s_deps.ota_mgr, "");
+            ota_mgr_request_zigbee(s_deps.ota_mgr);
         }
+        zigbee_ota_request_update(s_deps.ota_mgr);
         break;
 
     default:

@@ -1,0 +1,11 @@
+menu "CamperNode OS"
+
+    config CAMPER_OTA_BASE_FIRMWARE
+        bool "OTA base firmware (v0.1.1, no MOSFET :Od)"
+        default n
+        help
+            Build the one-time USB base image: Zigbee OTA client enabled,
+            GPIO-Karte :Od (MOSFET) disabled. Flash this once, then OTA to
+            the full firmware (0.2.0+) for MOSFET support.
+
+endmenu

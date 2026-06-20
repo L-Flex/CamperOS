@@ -21,6 +21,8 @@ def parse_pin_map(map_str: str) -> tuple[list[int], list[int]]:
         role_u = role.strip().upper()
         if role_u == "O":
             outputs.append(pin)
+        elif role_u in {"OD", "OM"}:
+            outputs.append(pin)
         elif role_u == "I":
             inputs.append(pin)
     return outputs, inputs
@@ -55,8 +57,8 @@ def validate_pin_map(map_str: str) -> str | None:
             return f"Ungültige GPIO-Nummer: {pin_s!r}"
 
         role_u = role.strip().upper()
-        if role_u not in {"O", "I"}:
-            return f"GPIO {pin}: Rolle muss O (Ausgang) oder I (Eingang) sein."
+        if role_u not in {"O", "I", "OD", "OM"}:
+            return f"GPIO {pin}: Rolle muss O, Od/Om (MOSFET), oder I sein."
 
         if pin in RESERVED_GPIO:
             if pin == 0:
@@ -65,6 +67,18 @@ def validate_pin_map(map_str: str) -> str | None:
                 return (
                     f"GPIO {BOOT_GPIO} (BOOT) ist reserviert — nicht eintragen, "
                     "erscheint immer automatisch als Eingang."
+                )
+            if pin in {16, 17}:
+                return (
+                    f"GPIO {pin} ist reserviert (UART-Konsole auf dem DevKit, nicht belegen)."
+                )
+            if pin == 6:
+                return (
+                    "GPIO 6 ist reserviert (Sensor — in HA: GPIO 6 sensor)."
+                )
+            if pin == 7:
+                return (
+                    "GPIO 7 ist reserviert (Sensor — in HA: GPIO 7 sensor)."
                 )
             return f"GPIO {pin} ist reserviert (LED/System)."
 

@@ -44,7 +44,7 @@ extern "C" {
 
 /**
 
- * Pin map format: "3:O,7:O,10:I" (O=output, I=input).
+ * Pin map format: "3:O,5:Od,10:I" (O=output, Od=open-drain/MOSFET, I=input).
 
  * GPIO9 (BOOT) is always input and must not appear in the map.
 
@@ -64,7 +64,9 @@ int gpio_io_parse_pin_map(const char *map, uint8_t temp_gpio,
 
                           uint8_t *out_pins, size_t *out_count,
 
-                          uint8_t *in_pins, size_t *in_count);
+                          uint8_t *in_pins, size_t *in_count,
+
+                          uint8_t *out_flags);
 
 
 

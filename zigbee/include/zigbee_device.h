@@ -31,6 +31,9 @@ void zigbee_device_report_on_off(uint8_t endpoint, bool on);
 /** Report temperature in degrees Celsius (ZCL value = temp * 100). */
 void zigbee_device_report_temperature(uint8_t endpoint, float temp_c);
 
+/** Report relative humidity in percent (ZCL value = hum * 100). */
+void zigbee_device_report_humidity(uint8_t endpoint, float hum_pct);
+
 #ifdef __cplusplus
 }
 #endif
