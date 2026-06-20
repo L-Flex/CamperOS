@@ -6,7 +6,13 @@
       "image_type": 50690,
       "file_version": 512,
       "file_size": 613262,
-      "checksum": "sha512:fbb985c98cb21bc8e243d2e442bf2f8c158482b030f97071379366eda5ef395d682d54d8be392383d69ff7d3185b88c509f62748ef04c46390bfa101e342e6ba",
+      "checksum": "sha3-256:b5b2c9bcb40becb0c90669c76ce2871d417aa35437f96402060a206b79aaee36",
+      "manufacturer_names": [
+        "CamperOS"
+      ],
+      "model_names": [
+        "CamperNode OS"
+      ],
       "changelog": "CamperNode OS 0.2.0 (MOSFET :Od, Zigbee OTA)"
     },
     {
@@ -15,7 +21,13 @@
       "image_type": 50690,
       "file_version": 513,
       "file_size": 613262,
-      "checksum": "sha512:4b201f3e90e67f153796de2354ad0c7c50ee6ebbbeaa2e1d920fab13b0c4ed1ab98afed7e7a17ebb2ff53044c846600e1c37b3af3712ab8493b0d640072c75de",
+      "checksum": "sha3-256:e5c8975f2d78de6a8000aeeb72bd7e3a1d451cf6622ae40809f24db2ac803588",
+      "manufacturer_names": [
+        "CamperOS"
+      ],
+      "model_names": [
+        "CamperNode OS"
+      ],
       "changelog": "Probe-Release 0.2.1 \u2014 OTA-Update-Test (identisches Image)"
     }
   ]
