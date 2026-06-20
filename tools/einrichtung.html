@@ -291,14 +291,17 @@
   zigpy_config:
     ota:
       extra_providers:
+        - type: zigpy_remote
+          url: https://raw.githubusercontent.com/L-Flex/CamperOS/main/firmware/ota-index.json
+          manufacturer_ids: [0x147B]
         - type: advanced
           path: /config/zha_ota
           warning: >-
             I understand I can *destroy* my devices by enabling OTA updates from files.
             Some OTA updates can be mistakenly applied to the wrong device, breaking it.
             I am consciously using this at my own risk.</pre>
-          <p class="hint">Nur nötig für Zigbee-OTA (Update von 0.1.1 auf 0.2.0). Bei direktem USB-Flash von 0.2.0 optional.</p>
-          <h3>D) OTA-Datei (nur bei Zigbee-Update)</h3>
+          <p class="hint"><code>custom_quirks_path</code> ist Pflicht für CamperNode in ZHA. OTA: GitHub (<code>zigpy_remote</code>) und/oder lokal (<code>advanced</code>).</p>
+          <h3>D) OTA-Datei (optional, nur lokal)</h3>
           <ol class="simple">
             <li>Ordner anlegen: <span class="badge">/config/zha_ota/</span></li>
             <li>Datei kopieren: <span class="badge">build/147b-c602-00000200-campernode.ota</span></li>

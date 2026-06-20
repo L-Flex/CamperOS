@@ -15,13 +15,14 @@ Die **0.2.1 Probe** nutzt dasselbe Binary wie 0.2.0 — nur zum Testen des OTA-U
 
 ```yaml
 zha:
+  enable_quirks: true
   custom_quirks_path: /config/custom_zha_quirks
   zigpy_config:
     ota:
       extra_providers:
         - type: zigpy_remote
           url: https://raw.githubusercontent.com/L-Flex/CamperOS/main/firmware/ota-index.json
-          manufacturer_ids: [5243]
+          manufacturer_ids: [0x147B]
 ```
 
 Nach Push auf GitHub und HA-Neustart erscheinen Updates an der **Firmware**-Kachel am Gerät.
