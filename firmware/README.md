@@ -63,4 +63,4 @@ Probe-Release (Update-Test, gleiches Binary):
 python tools\publish_firmware.py --probe
 ```
 
-Das Script schreibt `.ota`-Dateien und aktualisiert `ota-index.json` inkl. SHA512-Checksum.
+Das Script schreibt `.ota`-Dateien und aktualisiert `ota-index.json` inkl. **SHA3-256**-Checksum (von `zigpy_remote` vorgeschrieben).

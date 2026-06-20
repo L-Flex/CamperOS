@@ -62,7 +62,10 @@ def index_entry(ota_path: Path, file_version: int, changelog: str) -> dict:
         "image_type": IMAGE_TYPE,
         "file_version": file_version,
         "file_size": len(data),
-        "checksum": "sha512:" + hashlib.sha512(data).hexdigest(),
+        # zigpy_remote REMOTE_PROVIDER_SCHEMA requires sha3-256 (not sha512)
+        "checksum": "sha3-256:" + hashlib.sha3_256(data).hexdigest(),
+        "manufacturer_names": ["CamperOS"],
+        "model_names": ["CamperNode OS"],
         "changelog": changelog,
     }
 
