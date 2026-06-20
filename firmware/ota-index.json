@@ -1,0 +1,22 @@
+{
+  "firmwares": [
+    {
+      "binary_url": "https://raw.githubusercontent.com/L-Flex/CamperOS/main/firmware/147b-c602-00000200-campernode.ota",
+      "manufacturer_id": 5243,
+      "image_type": 50690,
+      "file_version": 512,
+      "file_size": 613262,
+      "checksum": "sha512:fbb985c98cb21bc8e243d2e442bf2f8c158482b030f97071379366eda5ef395d682d54d8be392383d69ff7d3185b88c509f62748ef04c46390bfa101e342e6ba",
+      "changelog": "CamperNode OS 0.2.0 (MOSFET :Od, Zigbee OTA)"
+    },
+    {
+      "binary_url": "https://raw.githubusercontent.com/L-Flex/CamperOS/main/firmware/147b-c602-00000201-campernode.ota",
+      "manufacturer_id": 5243,
+      "image_type": 50690,
+      "file_version": 513,
+      "file_size": 613262,
+      "checksum": "sha512:4b201f3e90e67f153796de2354ad0c7c50ee6ebbbeaa2e1d920fab13b0c4ed1ab98afed7e7a17ebb2ff53044c846600e1c37b3af3712ab8493b0d640072c75de",
+      "changelog": "Probe-Release 0.2.1 \u2014 OTA-Update-Test (identisches Image)"
+    }
+  ]
+}
